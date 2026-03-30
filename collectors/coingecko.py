@@ -18,9 +18,9 @@ BASE_URL = "https://api.coingecko.com/api/v3"
 
 
 def _get_headers() -> dict:
-    """构造请求头，有 API Key 时带上"""
-    api_key = os.getenv("COINGECKO_API_KEY", "")
-    if api_key:
+    """构造请求头，有真实 API Key 时带上（排除占位符）"""
+    api_key = os.getenv("COINGECKO_API_KEY", "").strip()
+    if api_key and not api_key.startswith("CG-...") and len(api_key) > 10:
         return {"x-cg-demo-api-key": api_key}
     return {}
 
