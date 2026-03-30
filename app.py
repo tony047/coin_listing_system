@@ -24,10 +24,10 @@ except Exception:
 
 # 路演演示 Token
 DEMO_TOKENS = [
-    {"label": "⭐ ETH — 以太坊（高分案例）", "query": "ethereum"},
-    {"label": "🔵 SUI — Sui（中高分）", "query": "sui"},
-    {"label": "🟡 OP — Optimism（建议观望）", "query": "optimism"},
-    {"label": "🐕 DOGE — 狗狗币（风险案例）", "query": "dogecoin"},
+    {"label": "⭐ ETH — 强烈推荐（91分）", "query": "ethereum"},
+    {"label": "🔴 HYPE — 高紧迫性（未上BYDFi）", "query": "hyperliquid"},
+    {"label": "🟡 SEI — 不建议（零提交风险）", "query": "sei-network"},
+    {"label": "🔵 SUI — 建议观望", "query": "sui"},
 ]
 
 
