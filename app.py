@@ -223,5 +223,18 @@ options = [f"{c['name']} ({c['symbol']})" for c in candidates]
 selected_idx = st.selectbox("选择 Token", range(len(options)), format_func=lambda i: options[i])
 coin = candidates[selected_idx]
 
-if st.button("开始评估", type="primary"):
+col_btn, col_clear = st.columns([3, 1])
+with col_btn:
+    run = st.button("开始评估", type="primary", use_container_width=True)
+with col_clear:
+    cache_key = f"result_{coin['id']}"
+    if cache_key in st.session_state:
+        if st.button("刷新分析", use_container_width=True):
+            del st.session_state[cache_key]
+            st.rerun()
+
+if run:
     _run_evaluation(coin)
+elif cache_key in st.session_state:
+    # 缓存存在时自动展示，不需要再点按钮
+    _render_report(st.session_state[cache_key])
