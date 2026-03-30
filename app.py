@@ -22,12 +22,12 @@ try:
 except Exception:
     pass  # 本地无 secrets.toml 时跳过
 
-# 路演演示 Token（实测确认数据）
+# 路演演示 Token（coin_id 固定，点击直接触发评估，无需搜索选择）
 DEMO_TOKENS = [
-    {"label": "⭐ ETH — 强烈推荐（91分）", "query": "ethereum"},
-    {"label": "🔴 HYPE — 高紧迫性（未上BYDFi）", "query": "hyperliquid"},
-    {"label": "🟡 SEI — 不建议（零提交风险）", "query": "sei-network"},
-    {"label": "🔵 SUI — 建议观望", "query": "sui"},
+    {"label": "⭐ ETH — 强烈推荐（91分）",    "id": "ethereum",    "name": "Ethereum",    "symbol": "ETH"},
+    {"label": "🔴 HYPE — 高紧迫性（未上BYDFi）","id": "hyperliquid", "name": "Hyperliquid", "symbol": "HYPE"},
+    {"label": "🟡 SEI — 不建议（零提交风险）",  "id": "sei-network", "name": "Sei",         "symbol": "SEI"},
+    {"label": "🔵 SUI — 建议观望",             "id": "sui",         "name": "Sui",         "symbol": "SUI"},
 ]
 
 # ── 全局样式 ──────────────────────────────────────────────
@@ -213,8 +213,9 @@ def _render_sidebar():
 
         st.subheader("快速演示")
         for item in DEMO_TOKENS:
-            if st.button(item["label"], use_container_width=True, key=f"demo_{item['query']}"):
-                st.session_state["demo_query"] = item["query"]
+            if st.button(item["label"], use_container_width=True, key=f"demo_{item['id']}"):
+                # 直接存 coin dict，主流程跳过搜索直接评估
+                st.session_state["auto_coin"] = {"id": item["id"], "name": item["name"], "symbol": item["symbol"]}
                 st.rerun()
 
         st.divider()
@@ -253,7 +254,11 @@ def _render_sidebar():
                 score = cached.get("total_score", "?")
                 icon = "🟢" if score != "?" and score >= 75 else ("🟡" if score != "?" and score >= 55 else "🔴")
                 if st.button(f"{icon} {name} — {score}分", key=f"hist_{coin_id}", use_container_width=True):
-                    st.session_state["demo_query"] = coin_id
+                    st.session_state["auto_coin"] = {
+                        "id": coin_id,
+                        "name": name,
+                        "symbol": cached.get("token_data", {}).get("symbol", ""),
+                    }
                     st.rerun()
 
 
@@ -553,19 +558,32 @@ _render_sidebar()
 st.title("🔍 Token Lens")
 st.caption("BYDFi 上币评估 AI 系统 · 数据实时拉取 · claude-sonnet-4-6 驱动")
 
-default_query = st.session_state.pop("demo_query", "")
 query = st.text_input(
     "Token 名称",
-    value=default_query,
     placeholder="输入 Token 名称，如 ETH、HYPE、SUI...",
     label_visibility="collapsed",
 )
 
+# ── 快速演示：直接触发评估，跳过搜索和选择 ──────────────
+auto_coin = st.session_state.pop("auto_coin", None)
+if auto_coin:
+    cache_key = f"result_{auto_coin['id']}"
+    col_title, col_clear = st.columns([3, 1])
+    col_title.markdown(f"**{auto_coin['name']} ({auto_coin['symbol']})**")
+    with col_clear:
+        if cache_key in st.session_state:
+            if st.button("🔄 刷新分析", use_container_width=True):
+                del st.session_state[cache_key]
+                st.session_state["auto_coin"] = auto_coin
+                st.rerun()
+    _run_evaluation(auto_coin)
+    st.stop()
+
+# ── 手动搜索流程 ──────────────────────────────────────────
 if not query:
     _render_homepage()
     st.stop()
 
-# 搜索
 with st.spinner("搜索中..."):
     try:
         candidates = search_token(query)
