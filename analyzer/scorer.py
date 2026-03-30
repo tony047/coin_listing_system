@@ -70,61 +70,58 @@ def score_market(data: dict) -> dict:
 def score_community(data: dict) -> dict:
     """
     社区活跃度评分（满分 20）
-    - Telegram 成员数：12分（主力指标）
-    - Reddit 订阅数：8分（辅助指标）
-    注：CoinGecko 免费版不提供 Twitter 粉丝数
+    - CoinGecko Watchlist 用户数：14分（主力指标，反映真实持仓/关注人数）
+    - Telegram 成员数：6分（辅助，如有数据则加分）
+    注：CoinGecko 免费版 Reddit/Twitter 数据已不可用（均为0），改用 watchlist_portfolio_users
     """
     score = 0
     details = {}
     warnings = []
 
-    # Telegram 成员（12分）
-    telegram = data.get("telegram_members")
-    if telegram is None:
-        tg_score = 0
-        details["telegram_data_available"] = False
+    # Watchlist 用户数（14分）—— CoinGecko 独有，反映真实关注人数
+    watchlist = data.get("watchlist_users")
+    if watchlist is None:
+        wl_score = 0
+        details["watchlist_data_available"] = False
     else:
-        details["telegram_data_available"] = True
+        details["watchlist_data_available"] = True
+        if watchlist >= 1_000_000:
+            wl_score = 14
+        elif watchlist >= 500_000:
+            wl_score = 11
+        elif watchlist >= 100_000:
+            wl_score = 8
+        elif watchlist >= 10_000:
+            wl_score = 5
+        elif watchlist > 0:
+            wl_score = 2
+        else:
+            wl_score = 0
+    score += wl_score
+    details["watchlist_score"] = wl_score
+    details["watchlist_users"] = watchlist
+
+    # Telegram 成员（6分，辅助指标）
+    telegram = data.get("telegram_members")
+    if telegram and telegram > 0:
         if telegram >= 100_000:
-            tg_score = 12
+            tg_score = 6
         elif telegram >= 10_000:
-            tg_score = 9
+            tg_score = 4
         elif telegram >= 1_000:
-            tg_score = 5
-        elif telegram > 0:
             tg_score = 2
         else:
-            tg_score = 0
+            tg_score = 1
+    else:
+        tg_score = 0
     score += tg_score
     details["telegram_score"] = tg_score
     details["telegram_members"] = telegram
 
-    # Reddit 订阅数（8分）
-    reddit = data.get("reddit_subscribers")
-    if reddit is None:
-        reddit_score = 0
-        details["reddit_data_available"] = False
-    else:
-        details["reddit_data_available"] = True
-        if reddit >= 500_000:
-            reddit_score = 8
-        elif reddit >= 100_000:
-            reddit_score = 6
-        elif reddit >= 10_000:
-            reddit_score = 4
-        elif reddit > 0:
-            reddit_score = 2
-        else:
-            reddit_score = 0
-    score += reddit_score
-    details["reddit_score"] = reddit_score
-    details["reddit_subscribers"] = reddit
-
-    # 异常检测：高社区 + 低流动性
+    # 异常检测：高社区关注 + 低流动性（可能是炒作 Token）
     volume = data.get("volume_24h_usd") or 0
-    total_community = (telegram or 0) + (reddit or 0)
-    if total_community >= 100_000 and volume < 1_000_000:
-        warnings.append("高社区/低流动性异常：社区规模较大但24h交易量不足$1M，数据可信度存疑")
+    if (watchlist or 0) >= 100_000 and volume < 1_000_000:
+        warnings.append("高社区关注/低流动性异常：Watchlist 用户超10万但24h交易量不足$1M，数据可信度存疑")
 
     return {"score": score, "max": 20, "details": details, "warnings": warnings}
 

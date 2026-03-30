@@ -117,10 +117,10 @@ token-lens/
 
 > 更新此区域，保持最新进度
 
-- [ ] Day1：项目框架 + CoinGecko 数据拉取
-- [ ] Day2：DeFiLlama + GitHub + 规则评分
-- [ ] Day3：Claude API 接入，端到端跑通
-- [ ] Day4：Streamlit 界面 + 雷达图
+- [x] Day1：项目框架 + CoinGecko 数据拉取
+- [x] Day2：规则评分完成（CoinGecko-only 方案）+ 修复社区评分（改用 watchlist_portfolio_users）
+- [x] Day3：Claude API 接入，端到端跑通
+- [x] Day4：Streamlit 界面 + 雷达图
 - [ ] Day5-6：真实数据测试 + 优化
 - [ ] Day7：提交 + 路演准备
 

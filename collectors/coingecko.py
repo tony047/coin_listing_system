@@ -123,9 +123,13 @@ def get_token_data(coin_id: str) -> dict:
         "price_change_30d": market.get("price_change_percentage_30d"),
         "market_cap_rank": raw.get("market_cap_rank"),
 
-        # 社区数据（CoinGecko 免费版不提供 Twitter 粉丝数）
+        # 社区数据
+        # CoinGecko 免费版 Reddit/Twitter 数据已不可用（均返回0或null）
+        # 改用 watchlist_portfolio_users 和 sentiment_votes 作为社区关注度指标
         "telegram_members": community.get("telegram_channel_user_count"),
         "reddit_subscribers": community.get("reddit_subscribers"),
+        "watchlist_users": raw.get("watchlist_portfolio_users"),
+        "sentiment_up_pct": raw.get("sentiment_votes_up_percentage"),
 
         # 开发者数据（来自 CoinGecko developer_data，无需调 GitHub API）
         "github_stars": developer.get("stars"),
