@@ -12,7 +12,11 @@ from analyzer.scorer import compute_rule_scores
 from analyzer.claude_analyzer import analyze
 from report.chart import build_radar_chart
 
+# 本地开发读 .env，Streamlit Cloud 读 st.secrets
 load_dotenv()
+for key in ["ANTHROPIC_API_KEY", "COINGECKO_API_KEY"]:
+    if key in st.secrets and not os.getenv(key):
+        os.environ[key] = st.secrets[key]
 
 st.set_page_config(
     page_title="Token Lens — 上币评估系统",
