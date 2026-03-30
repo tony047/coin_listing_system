@@ -45,12 +45,10 @@ COINGECKO_API_KEY=CG-...           # 可选，提升 CoinGecko API 额度
 token-lens/
 ├── app.py                      # Streamlit 主入口，UI 渲染逻辑
 ├── collectors/
-│   ├── coingecko.py            # CoinGecko API：市场数据 + 社区数据
-│   ├── defillama.py            # DeFiLlama API：TVL 数据
-│   └── github.py               # GitHub API：代码活跃度
+│   └── coingecko.py            # CoinGecko API：市场/社区/技术/交易所列表（唯一数据源）
 ├── analyzer/
 │   ├── scorer.py               # 规则评分引擎（市场/社区/技术 3个维度）
-│   └── claude_analyzer.py      # Claude API：竞争位置 + 风险信号 + 文字分析
+│   └── claude_analyzer.py      # Claude API：竞争位置 + 风险信号 + BYDFi紧迫性 + 文字分析
 ├── report/
 │   └── chart.py                # Plotly 雷达图生成
 ├── PRD.md                      # 完整产品需求文档（含评分规则、界面设计）

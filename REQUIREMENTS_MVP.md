@@ -26,16 +26,14 @@ Claude 综合分析 + 评分
 
 ---
 
-## 数据源（只用这3个，全部免费稳定）
+## 数据源（只用 CoinGecko，一个免费接口搞定所有）
 
 | 数据源 | 提供数据 | API 状态 |
 |--------|----------|----------|
-| **CoinGecko** | 市值、交易量、价格、Twitter/Telegram 粉丝数、GitHub 链接 | 免费，无需 Key |
-| **DeFiLlama** | TVL 数据 | 免费，无需 Key |
-| **GitHub API** | 代码提交活跃度、Star 数、贡献者数 | 免费，Token 可选 |
+| **CoinGecko** | 市值、交易量、价格、Twitter/Telegram 粉丝数、GitHub Star/提交数、已上线交易所列表 | 免费，无需 Key |
 
-> 不接 Twitter API、不爬 Certik/Slowmist、不用 Discord/Telegram Bot。
-> CoinGecko 自带社区数据字段，够用。
+> 不接 Twitter API、不爬 Certik/Slowmist、不调 DeFiLlama、不调 GitHub API。
+> CoinGecko 的 `developer_data` 字段包含 GitHub Star 数和近4周提交数，`tickers` 字段包含实时交易所上线情况，一个接口全部覆盖。
 
 ---
 
@@ -43,11 +41,11 @@ Claude 综合分析 + 评分
 
 | 维度 | 权重 | 数据来源 | 评分范围 |
 |------|------|----------|----------|
-| 市场规模 | 30% | CoinGecko | 0-30 |
-| 社区活跃度 | 20% | CoinGecko 社区字段 | 0-20 |
-| 技术实力 | 20% | GitHub API + DeFiLlama | 0-20 |
-| 竞争位置 | 15% | Claude 分析（基于市值排名+赛道） | 0-15 |
-| 风险信号 | 15% | Claude 分析（基于已有数据综合判断） | 0-15 |
+| 市场规模 | 30% | CoinGecko market_data | 0-30 |
+| 社区活跃度 | 20% | CoinGecko community_data | 0-20 |
+| 技术实力 | 20% | CoinGecko developer_data（Stars + 近4周提交数） | 0-20 |
+| 竞争位置 | 15% | Claude 分析（基于 tickers 实时交易所列表，非 Claude 记忆） | 0-15 |
+| 风险信号 | 15% | Claude 分析（基于全量数据综合判断） | 0-15 |
 
 ### 评分 → 推荐结论
 
@@ -63,10 +61,11 @@ Claude 综合分析 + 评分
 
 Claude 不只是格式化输出，承担以下分析：
 
-1. **竞争位置判断**：基于市值排名和赛道，判断该项目在同类中的地位
+1. **竞争位置判断**：基于 tickers 实时交易所列表（由代码从 CoinGecko 提取后传入），判断该项目在头部所的覆盖情况，不依赖 Claude 的训练集记忆
 2. **风险信号识别**：结合所有数据，标记异常（交易量暴增、社区萎缩、代码停滞等）
 3. **自然语言解读**：将数字数据转化为"这意味着什么"的结论
 4. **最终推荐理由**：给出 3 条核心支持理由 + 2 条主要风险点
+5. **BYDFi 跟进紧迫性**：基于竞品已上线情况，给出 BYDFi 是否需要尽快跟进的判断（高/中/低）
 
 ---
 
@@ -89,14 +88,11 @@ Claude 不只是格式化输出，承担以下分析：
 token-assessment/
 ├── app.py                  # Streamlit 主入口
 ├── collectors/
-│   ├── coingecko.py        # CoinGecko 数据拉取
-│   ├── defillama.py        # DeFiLlama TVL 数据
-│   └── github.py           # GitHub 代码活跃度
+│   └── coingecko.py        # CoinGecko 数据拉取（唯一数据源）
 ├── analyzer/
 │   ├── scorer.py           # 各维度评分计算
 │   └── claude_analyzer.py  # Claude API 调用
 ├── report/
-│   ├── generator.py        # 报告组装
 │   └── chart.py            # 雷达图生成
 ├── .env                    # ANTHROPIC_API_KEY
 └── requirements.txt
@@ -112,10 +108,11 @@ token-assessment/
 2. **各维度评分条**：5个维度得分可视化
 3. **雷达图**：一眼看出强弱维度
 4. **Claude 分析文字**：
-   - 该项目在赛道中的位置
+   - 该项目在头部交易所的覆盖情况（基于实时数据）
    - 3 条推荐/不推荐理由
    - 2 条需要关注的风险点
-5. **最终结论**：绿/黄/红 + 一句话推荐语
+5. **BYDFi 跟进建议**：高/中/低紧迫性 + 一句理由（对评委的差异化亮点）
+6. **最终结论**：绿/黄/红 + 一句话推荐语
 
 ---
 
@@ -123,8 +120,8 @@ token-assessment/
 
 | 天 | 任务 | 产出 |
 |----|------|------|
-| Day 1（今天）| 搭框架 + 跑通 CoinGecko 数据拉取 | 能打印出 BTC 的市场数据 |
-| Day 2 | 接 DeFiLlama + GitHub，完成评分逻辑 | 能跑出5个维度分数 |
+| Day 1（今天）| 搭框架 + 跑通 CoinGecko 数据拉取（含 tickers 和 developer_data） | 能打印出 BTC 的完整字段 |
+| Day 2 | 完成规则评分逻辑（市场/社区/技术3维度），验证 developer_data 覆盖率 | 能跑出5个维度分数 |
 | Day 3 | 接入 Claude API，调通分析 prompt | 能输出 Claude 的文字分析 |
 | Day 4 | Streamlit 界面 + 雷达图 | 有 UI 可以操作了 |
 | Day 5 | 用 5-10 个真实 Token 测试，优化 prompt | 结论准确度提升 |
