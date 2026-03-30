@@ -122,8 +122,8 @@ token-lens/
 - [x] Day3：Claude API 接入，端到端跑通
 - [x] Day4：Streamlit 界面 + 雷达图
 - [x] Day5：真实 Claude API 端到端测试 + prompt 防幻觉约束
-- [ ] Day6：边角打磨 + 路演排练
-- [ ] Day7：提交 + 路演准备
+- [x] Day6：边角打磨 + 路演排练
+- [x] Day7：README + 推送 GitHub + 提交
 
 ---
 
