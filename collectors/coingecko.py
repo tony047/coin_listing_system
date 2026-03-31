@@ -5,7 +5,15 @@ CoinGecko 数据采集模块
 
 import os
 import requests
+import time
 from typing import Optional
+
+try:
+    from ..utils.logger import get_logger, log_function_call
+except ImportError:
+    from utils.logger import get_logger, log_function_call
+
+logger = get_logger()
 
 # 主流交易所白名单，用于 tickers 裁剪
 MAJOR_EXCHANGES = {
@@ -25,23 +33,31 @@ def _get_headers() -> dict:
     return {}
 
 
+@log_function_call
 def search_token(query: str) -> list[dict]:
     """
     搜索 Token，返回候选列表
     返回格式：[{"id": "sui", "name": "Sui", "symbol": "SUI"}, ...]
     """
+    start_time = time.time()
+    endpoint = f"{BASE_URL}/search"
+    params = {"query": query}
+
     try:
+        logger.api_call("CoinGecko", endpoint, params)
+
         resp = requests.get(
-            f"{BASE_URL}/search",
-            params={"query": query},
+            endpoint,
+            params=params,
             headers=_get_headers(),
             timeout=10,
         )
         resp.raise_for_status()
         data = resp.json()
         coins = data.get("coins", [])
+
         # 只返回前 8 个候选，够用
-        return [
+        result = [
             {
                 "id": c["id"],
                 "name": c["name"],
@@ -49,12 +65,32 @@ def search_token(query: str) -> list[dict]:
             }
             for c in coins[:8]
         ]
+
+        duration = time.time() - start_time
+        logger.api_success("CoinGecko.search_token", duration)
+        logger.info(f"Found {len(result)} tokens for query: {query}")
+
+        return result
+
     except requests.exceptions.HTTPError as e:
+        duration = time.time() - start_time
         if e.response.status_code == 429:
-            raise RuntimeError("CoinGecko 请求频率过高，请稍后重试")
-        raise RuntimeError(f"CoinGecko 搜索失败：{e}")
+            error_msg = "CoinGecko 请求频率过高，请稍后重试"
+            logger.api_error("CoinGecko.search_token", RuntimeError(error_msg), duration)
+            raise RuntimeError(error_msg)
+        error_msg = f"CoinGecko 搜索失败：{e}"
+        logger.api_error("CoinGecko.search_token", RuntimeError(error_msg), duration)
+        raise RuntimeError(error_msg)
     except requests.exceptions.RequestException as e:
-        raise RuntimeError(f"网络请求失败：{e}")
+        duration = time.time() - start_time
+        error_msg = f"网络请求失败：{e}"
+        logger.api_error("CoinGecko.search_token", RuntimeError(error_msg), duration)
+        raise RuntimeError(error_msg)
+    except Exception as e:
+        duration = time.time() - start_time
+        error_msg = f"搜索过程中发生未知错误：{e}"
+        logger.api_error("CoinGecko.search_token", RuntimeError(error_msg), duration)
+        raise RuntimeError(error_msg)
 
 
 def extract_listed_exchanges(tickers: list) -> tuple[list[str], int]:
@@ -70,34 +106,61 @@ def extract_listed_exchanges(tickers: list) -> tuple[list[str], int]:
     return major, others_count
 
 
+@log_function_call
 def get_token_data(coin_id: str) -> dict:
     """
     拉取 Token 完整数据，返回结构化字典
     包含：市场数据、社区数据、开发者数据、交易所列表
     """
+    start_time = time.time()
+    endpoint = f"{BASE_URL}/coins/{coin_id}"
+    params = {
+        "tickers": "true",
+        "market_data": "true",
+        "community_data": "true",
+        "developer_data": "true",
+        "sparkline": "false",
+    }
+
     try:
+        logger.api_call("CoinGecko", endpoint, params)
+        logger.info(f"Fetching data for token: {coin_id}")
+
         resp = requests.get(
-            f"{BASE_URL}/coins/{coin_id}",
-            params={
-                "tickers": "true",
-                "market_data": "true",
-                "community_data": "true",
-                "developer_data": "true",
-                "sparkline": "false",
-            },
+            endpoint,
+            params=params,
             headers=_get_headers(),
             timeout=15,
         )
         resp.raise_for_status()
         raw = resp.json()
+
+        duration = time.time() - start_time
+        logger.api_success("CoinGecko.get_token_data", duration)
+
     except requests.exceptions.HTTPError as e:
+        duration = time.time() - start_time
         if e.response.status_code == 404:
-            raise RuntimeError(f"未找到 Token：{coin_id}")
+            error_msg = f"未找到 Token：{coin_id}"
+            logger.api_error("CoinGecko.get_token_data", RuntimeError(error_msg), duration)
+            raise RuntimeError(error_msg)
         if e.response.status_code == 429:
-            raise RuntimeError("CoinGecko 请求频率过高，请稍后重试")
-        raise RuntimeError(f"CoinGecko 数据获取失败：{e}")
+            error_msg = "CoinGecko 请求频率过高，请稍后重试"
+            logger.api_error("CoinGecko.get_token_data", RuntimeError(error_msg), duration)
+            raise RuntimeError(error_msg)
+        error_msg = f"CoinGecko 数据获取失败：{e}"
+        logger.api_error("CoinGecko.get_token_data", RuntimeError(error_msg), duration)
+        raise RuntimeError(error_msg)
     except requests.exceptions.RequestException as e:
-        raise RuntimeError(f"网络请求失败：{e}")
+        duration = time.time() - start_time
+        error_msg = f"网络请求失败：{e}"
+        logger.api_error("CoinGecko.get_token_data", RuntimeError(error_msg), duration)
+        raise RuntimeError(error_msg)
+    except Exception as e:
+        duration = time.time() - start_time
+        error_msg = f"获取 Token 数据时发生未知错误：{e}"
+        logger.api_error("CoinGecko.get_token_data", RuntimeError(error_msg), duration)
+        raise RuntimeError(error_msg)
 
     market = raw.get("market_data", {})
     community = raw.get("community_data", {})

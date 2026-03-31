@@ -7,8 +7,16 @@ Claude 分析模块
 import json
 import os
 import re
+import time
 
 import anthropic
+
+try:
+    from ..utils.logger import get_logger, log_function_call
+except ImportError:
+    from utils.logger import get_logger, log_function_call
+
+logger = get_logger()
 
 MODEL = "claude-sonnet-4-6"
 
@@ -279,24 +287,34 @@ def _demo_analyze(token_data: dict, rule_scores: dict) -> dict:
     }
 
 
+@log_function_call
 def analyze(token_data: dict, rule_scores: dict) -> dict:
     """
     调用 Claude 完成竞争位置分析 + 语义风险判断 + 文字生成
     返回 Claude 分析结果字典
     DEMO_MODE=true 时跳过 Claude，用规则自动生成分析结果
     """
+    token_name = token_data.get("name", "Unknown")
+
     # Demo 模式：无需 API Key，路演备用
     if os.getenv("DEMO_MODE", "").lower() == "true":
+        logger.info(f"Using demo mode for {token_name}")
         return _demo_analyze(token_data, rule_scores)
 
     api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
     if not api_key or api_key.startswith("sk-ant-api03-xxx"):
-        raise RuntimeError("未配置有效的 ANTHROPIC_API_KEY，请在 .env 中填入真实 Key")
+        error_msg = "未配置有效的 ANTHROPIC_API_KEY，请在 .env 中填入真实 Key"
+        logger.error(error_msg)
+        raise RuntimeError(error_msg)
 
+    start_time = time.time()
     client = anthropic.Anthropic(api_key=api_key)
     prompt = _build_prompt(token_data, rule_scores)
 
     try:
+        logger.api_call("Claude", f"analyze({token_name})", {"model": MODEL})
+        logger.info(f"Starting Claude analysis for {token_name}")
+
         message = client.messages.create(
             model=MODEL,
             max_tokens=1024,
@@ -304,18 +322,52 @@ def analyze(token_data: dict, rule_scores: dict) -> dict:
             messages=[{"role": "user", "content": prompt}],
         )
         response_text = message.content[0].text
+
+        duration = time.time() - start_time
+        logger.api_success("Claude.analyze", duration)
+        logger.info(f"Claude analysis completed for {token_name} in {duration:.2f}s")
+
         return _parse_response(response_text)
-    except anthropic.APITimeoutError:
+
+    except anthropic.APITimeoutError as e:
+        duration = time.time() - start_time
+        logger.error(f"Claude API timeout for {token_name}: {e}")
+        logger.warning("Using fallback result due to timeout")
         return _fallback_result()
-    except anthropic.AuthenticationError:
-        raise RuntimeError("ANTHROPIC_API_KEY 无效，请检查 .env 配置")
-    except anthropic.RateLimitError:
-        raise RuntimeError("Claude API 请求频率过高，请稍后重试")
+
+    except anthropic.AuthenticationError as e:
+        duration = time.time() - start_time
+        error_msg = "ANTHROPIC_API_KEY 无效，请检查 .env 配置"
+        logger.error(f"{error_msg}: {e}")
+        raise RuntimeError(error_msg)
+
+    except anthropic.RateLimitError as e:
+        duration = time.time() - start_time
+        error_msg = "Claude API 请求频率过高，请稍后重试"
+        logger.error(f"{error_msg}: {e}")
+        raise RuntimeError(error_msg)
+
     except anthropic.BadRequestError as e:
+        duration = time.time() - start_time
         # 余额不足也会报 400 BadRequest
         msg = str(e)
         if "credit balance" in msg or "too low" in msg:
-            raise RuntimeError("Anthropic 账户余额不足，请前往 console.anthropic.com 充值")
-        raise RuntimeError(f"Claude API 请求错误：{e}")
+            error_msg = "Anthropic 账户余额不足，请前往 console.anthropic.com 充值"
+            logger.error(f"{error_msg}: {e}")
+            raise RuntimeError(error_msg)
+        error_msg = f"Claude API 请求错误：{e}"
+        logger.error(error_msg)
+        raise RuntimeError(error_msg)
+
     except anthropic.APIError as e:
-        raise RuntimeError(f"Claude API 错误：{e}")
+        duration = time.time() - start_time
+        error_msg = f"Claude API 错误：{e}"
+        logger.error(error_msg)
+        raise RuntimeError(error_msg)
+
+    except Exception as e:
+        duration = time.time() - start_time
+        error_msg = f"Claude 分析过程中发生未知错误：{e}"
+        logger.error(error_msg)
+        logger.warning("Using fallback result due to unexpected error")
+        return _fallback_result()
