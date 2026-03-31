@@ -1,0 +1,14 @@
+[server]
+# Streamlit Cloud 会自动设置端口，本地开发时生效
+port = 8501
+headless = true
+
+[theme]
+base = "dark"
+primaryColor = "#FF4B4B"
+backgroundColor = "#0F1117"
+secondaryBackgroundColor = "#1A1D27"
+textColor = "#E0E0E0"
+
+[browser]
+gatherUsageStats = false
