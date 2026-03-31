@@ -37,10 +37,10 @@ def t(key: str, **kwargs) -> str:
 
 # 路演演示 Token（coin_id 固定，点击直接触发评估，无需搜索选择）
 DEMO_TOKENS = [
-    {"label": "⭐ ETH — 强烈推荐（91分）",    "id": "ethereum",    "name": "Ethereum",    "symbol": "ETH"},
-    {"label": "🔴 HYPE — 高紧迫性（未上BYDFi）","id": "hyperliquid", "name": "Hyperliquid", "symbol": "HYPE"},
-    {"label": "🟡 SEI — 不建议（零提交风险）",  "id": "sei-network", "name": "Sei",         "symbol": "SEI"},
-    {"label": "🔵 SUI — 建议观望",             "id": "sui",         "name": "Sui",         "symbol": "SUI"},
+    {"label": "⭐ ETH",  "id": "ethereum",    "name": "Ethereum",    "symbol": "ETH"},
+    {"label": "🔴 HYPE", "id": "hyperliquid", "name": "Hyperliquid", "symbol": "HYPE"},
+    {"label": "🟡 SEI",  "id": "sei-network", "name": "Sei",         "symbol": "SEI"},
+    {"label": "🔵 SUI",  "id": "sui",         "name": "Sui",         "symbol": "SUI"},
 ]
 
 # ── 全局样式 ──────────────────────────────────────────────
@@ -487,26 +487,6 @@ def _render_homepage():
                 st.session_state["auto_coin"] = {"id": item["id"], "name": item["name"], "symbol": item["symbol"]}
                 st.rerun()
     
-    # 功能按钮行
-    st.markdown("<div style=\"height:1rem;\"></div>", unsafe_allow_html=True)
-    btn_col1, btn_col2, btn_col3 = st.columns(3)
-    with btn_col1:
-        if st.button(t("batch_eval"), use_container_width=True):
-            st.session_state["show_batch"] = True
-            st.rerun()
-    with btn_col2:
-        if st.session_state.get("compare_list"):
-            if st.button(t("compare", count=len(st.session_state['compare_list'])), use_container_width=True):
-                st.session_state["show_compare"] = True
-                st.rerun()
-    with btn_col3:
-        # 系统状态
-        demo_mode = os.getenv("DEMO_MODE", "").lower() == "true"
-        if demo_mode:
-            st.caption(t("demo_mode"))
-        else:
-            has_key = bool(os.getenv("ANTHROPIC_API_KEY", "").strip())
-            st.caption(f"API: {'✅' if has_key else '❌'}")
     
     # 评估历史
     history = [k.replace("result_", "") for k in st.session_state if k.startswith("result_")]
@@ -814,7 +794,7 @@ def _run_evaluation(coin: dict):
     
     # 阶段1.5：DeFiLlama 数据丰富
     progress.progress(25, text=t("progress_defi"))
-    status.info("📊 DeFiLlama TVL...")
+    status.info(f"📊 {t('progress_defi')}")
     try:
         token_data = enrich_token_data(coin_id, token_data)
     except Exception:
@@ -822,13 +802,13 @@ def _run_evaluation(coin: dict):
     progress.progress(35, text=t("progress_done"))
 
     # 阶段2：规则评分
-    status.info("📊 Scoring...")
+    status.info(f"📊 {t('progress_scoring')}")
     progress.progress(40, text=t("progress_scoring"))
     rule_scores = compute_rule_scores(token_data)
     progress.progress(55, text=t("progress_done"))
 
     # 阶段3：Claude 分析
-    status.info("🤖 Claude AI analysis (15-20s)...")
+    status.info(f"🤖 {t('progress_ai')}")
     progress.progress(60, text=t("progress_ai"))
     try:
         ai_result = analyze(token_data, rule_scores)
