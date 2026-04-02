@@ -5,6 +5,7 @@ Streamlit 主入口
 
 import os
 import time
+import base64
 import streamlit as st
 from dotenv import load_dotenv
 
@@ -1216,12 +1217,17 @@ _inject_css()
 # 顶部导航栏 - BYDFi Logo + 语言切换同行
 col_title, col_lang = st.columns([5, 1])
 with col_title:
-    st.markdown('''
-    <div style="padding-top:0.5rem; display:flex; align-items:center; gap:0.75rem;">
-        <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAMAAABEpIrGAAAAV1BMVEVHcEz4uzcSFiL6xTj4uzf4uzf4uzf4uzf6vjf5vDcICiASFiL4uzf7vTcRFSISFiIPEhwOEyESFiL4uzf4uzcIDSEOFCISFiL4uzcSFiL4uzcSFiL4uzcbZniUAAAAG3RSTlMAcewG9orQwRZCE9PpKIK7BjtlWdsmTKSrMppy/mljAAABCklEQVQ4jXWS27aDIBBDRxABFa+1tS3//52HI04sqHmaJVmbMJG+uxZKpXwUseE1JOemzA3fKTEUng2CDc0NYQKiI6t3VQUjWqobIGpTMfhh9lkRjUC8yLLBr3GuTLiuh2MhDYfb5vk/zxs5+8G1bNAyzDom7oB4Yj++nMNso2EAQpAEoiWp+NEHYjo25AuSbBiQUywSOVt37O15vYufzfZI+cEV9nf1o9j7QAe+SuvfcoqRVjzTpoZaxF0D8Ml+oK3Vmh4AmNwQWu1oRkKVn4ecTe0AqE6AoPdRRGzxJIdzfXl+1JA/kYUmLxKmiKuEEaH3nm9lTy3mWvMWT4gyb/GU8+6JLKNk+uEPSjAvNsI1XKcAAAAASUVORK5CYII=" alt="BYDFi" style="width:32px; height:32px;">
-        <span style="font-size:1.5rem; font-weight:800; background: linear-gradient(135deg, #fbbf24, #f59e0b); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">BYDFi</span>
+    # 读取本地logo文件并转为base64
+    logo_path = os.path.join(os.path.dirname(__file__), "assets", "logo.png")
+    logo_base64 = ""
+    if os.path.exists(logo_path):
+        with open(logo_path, "rb") as f:
+            logo_base64 = base64.b64encode(f.read()).decode()
+    st.markdown(f'''
+    <div style="padding-top:0.5rem;">
+        <img src="data:image/png;base64,{logo_base64}" alt="BYDFi" style="width:130px; height:48px; display:block;">
+        <div style="color:#71717a; font-size:0.75rem; margin-top:0.25rem;">Token Assessment System</div>
     </div>
-    <div style="color:#71717a; font-size:0.75rem; margin-top:0.1rem;">Token Assessment System</div>
     ''', unsafe_allow_html=True)
 with col_lang:
     current_lang = st.session_state.get("lang", "zh")
