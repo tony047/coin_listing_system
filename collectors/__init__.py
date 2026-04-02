@@ -9,6 +9,8 @@ from .defillama import (
     get_tvl_by_gecko_id,
     enrich_token_data,
 )
+from .tokenomics import analyze_tokenomics
+from .onchain import get_onchain_data
 
 __all__ = [
     "search_token",
@@ -18,4 +20,6 @@ __all__ = [
     "get_protocol_data",
     "get_tvl_by_gecko_id",
     "enrich_token_data",
+    "analyze_tokenomics",
+    "get_onchain_data",
 ]

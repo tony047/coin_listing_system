@@ -8,23 +8,25 @@ import plotly.graph_objects as go
 
 def build_radar_chart(scores: dict, lang: str = "zh") -> go.Figure:
     """
-    生成5维度雷达图
+    生成7维度雷达图
     scores 格式：
     {
-        "market": {"score": 22, "max": 30},
-        "community": {"score": 14, "max": 20},
-        "technical": {"score": 15, "max": 20},
+        "market": {"score": 20, "max": 25},
+        "community": {"score": 12, "max": 15},
+        "technical": {"score": 12, "max": 15},
         "competitive": {"score": 12, "max": 15},
-        "risk": {"score": 10, "max": 15},
+        "risk": {"score": 8, "max": 10},
+        "tokenomics": {"score": 8, "max": 10},
+        "onchain": {"score": 9, "max": 10},
     }
     """
-    # 多语言标签
+    # 多语言标签 - 7维度
     labels = {
-        "zh": ["市场规模", "社区活跃度", "技术实力", "竞争位置", "风险信号"],
-        "en": ["Market Cap", "Community", "Technology", "Competition", "Risk"]
+        "zh": ["市场规模", "社区活跃度", "技术实力", "竞争位置", "风险信号", "Tokenomics", "链上健康"],
+        "en": ["Market Cap", "Community", "Technology", "Competition", "Risk", "Tokenomics", "On-chain"]
     }
     categories = labels.get(lang, labels["zh"])
-    keys = ["market", "community", "technical", "competitive", "risk"]
+    keys = ["market", "community", "technical", "competitive", "risk", "tokenomics", "onchain"]
 
     # 归一化到百分比，方便雷达图展示
     values = [

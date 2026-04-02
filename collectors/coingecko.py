@@ -18,7 +18,7 @@ logger = get_logger()
 # 主流交易所白名单，用于 tickers 裁剪
 MAJOR_EXCHANGES = {
     "Binance", "OKX", "Bybit", "Coinbase Exchange", "Kraken",
-    "Bitget", "Gate.io", "BYDFi", "KuCoin", "Huobi",
+    "Bitget", "Gate", "BYDFi", "KuCoin", "HTX",
     "MEXC", "Bitfinex", "Gemini", "Crypto.com Exchange"
 }
 
@@ -205,6 +205,15 @@ def get_token_data(coin_id: str) -> dict:
         "listed_on_other_count": other_exchanges_count,
         "listed_on_bydfi": listed_on_bydfi,
         "total_tickers": len(tickers),
+
+        # 供应量数据（用于 Tokenomics 分析）
+        "total_supply": market.get("total_supply"),
+        "circulating_supply": market.get("circulating_supply"),
+        "max_supply": market.get("max_supply"),
+
+        # 合约地址（用于链上数据分析）
+        # 格式：{"ethereum": "0x...", "solana": "...", "binance-smart-chain": "0x..."}
+        "platforms": raw.get("platforms", {}),
     }
 
 

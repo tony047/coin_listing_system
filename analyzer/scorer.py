@@ -235,15 +235,294 @@ def score_risk_rules(data: dict) -> dict:
     }
 
 
-def compute_rule_scores(data: dict) -> dict:
+def score_tokenomics(tokenomics_data: dict) -> dict:
     """
-    计算前3个维度规则评分 + 规则风险评分
+    Tokenomics 健康度评分（满分 10，扣分制）
+    
+    规则：
+    - 基础分 10 分
+    - 流通比例 < 20%：-3 分（砸盘风险高）
+    - 流通比例 < 30%（但 >= 20%）：-2 分
+    - 无最大供应量限制（无限通胀）：-1 分
+    - 数据不可用时：返回满分 10（不扣分），标注 data_available: false
+    
+    Args:
+        tokenomics_data: analyze_tokenomics() 返回的 Tokenomics 数据
+    
+    Returns:
+        {
+            'score': int,
+            'max': 10,
+            'details': dict,
+            'deductions': list,
+            'data_available': bool
+        }
+    """
+    base_score = 10
+    deductions = []
+    details = {}
+    
+    # 检查数据可用性
+    data_available = tokenomics_data.get("data_available", False)
+    
+    if not data_available:
+        # 数据不可用时返回满分，不扣分
+        return {
+            "score": base_score,
+            "max": 10,
+            "details": {
+                "message": "Tokenomics 数据不可用，不进行扣分"
+            },
+            "deductions": [],
+            "data_available": False
+        }
+    
+    # 提取关键指标
+    circulation_ratio = tokenomics_data.get("circulation_ratio")
+    has_max_supply = tokenomics_data.get("has_max_supply", False)
+    
+    # 记录详情
+    details["total_supply"] = tokenomics_data.get("total_supply")
+    details["circulating_supply"] = tokenomics_data.get("circulating_supply")
+    details["max_supply"] = tokenomics_data.get("max_supply")
+    details["circulation_ratio"] = circulation_ratio
+    details["has_max_supply"] = has_max_supply
+    details["is_deflationary"] = tokenomics_data.get("is_deflationary", False)
+    details["supply_concentration"] = tokenomics_data.get("supply_concentration", "UNKNOWN")
+    
+    # 评分规则 1：流通比例过低
+    if circulation_ratio is not None:
+        if circulation_ratio < 0.2:
+            # 流通比例 < 20%：扣 3 分
+            deductions.append({
+                "reason": "流通比例过低（< 20%）",
+                "points": 3,
+                "detail": f"流通比例 {circulation_ratio:.1%}，砸盘风险高"
+            })
+        elif circulation_ratio < 0.3:
+            # 流通比例 20%-30%：扣 2 分
+            deductions.append({
+                "reason": "流通比例较低（20%-30%）",
+                "points": 2,
+                "detail": f"流通比例 {circulation_ratio:.1%}，存在一定砸盘风险"
+            })
+    
+    # 评分规则 2：无最大供应量限制（无限通胀）
+    if not has_max_supply:
+        deductions.append({
+            "reason": "无最大供应量限制",
+            "points": 1,
+            "detail": "可能存在无限通胀风险"
+        })
+    
+    # 计算最终分数
+    total_deduction = sum(d["points"] for d in deductions)
+    final_score = max(0, base_score - total_deduction)
+    
+    return {
+        "score": final_score,
+        "max": 10,
+        "details": details,
+        "deductions": deductions,
+        "data_available": True
+    }
+
+
+def score_onchain(onchain_data: dict) -> dict:
+    """
+    链上健康度评分（满分 10，扣分制）
+    
+    规则：
+    - 基础分 10 分
+    - Top 10 持有者占比 > 60%：-4 分（极端集中，CRITICAL）
+    - Top 10 持有者占比 > 40%（但 <= 60%）：-2 分（HIGH）
+    - 持有者总数 < 1000：-3 分（极少人持有）
+    - 持有者总数 < 5000（但 >= 1000）：-1 分
+    - 数据不可用（UNKNOWN）：返回满分 10（不扣分），标注 data_available: false
+    
+    Args:
+        onchain_data: get_onchain_data() 返回的链上数据
+    
+    Returns:
+        {
+            'score': int,
+            'max': 10,
+            'details': dict,
+            'deductions': list,
+            'data_available': bool
+        }
+    """
+    base_score = 10
+    deductions = []
+    details = {}
+    
+    # 检查数据可用性
+    data_available = onchain_data.get("data_available", False)
+    concentration_risk = onchain_data.get("concentration_risk", "UNKNOWN")
+    
+    if not data_available or concentration_risk == "UNKNOWN":
+        # 数据不可用时返回满分，不扣分
+        return {
+            "score": base_score,
+            "max": 10,
+            "details": {
+                "message": "链上数据不可用，不进行扣分",
+                "data_source": onchain_data.get("data_source", "none")
+            },
+            "deductions": [],
+            "data_available": False
+        }
+    
+    # 提取关键指标
+    top_holders_pct = onchain_data.get("top_holders_pct")
+    total_holders = onchain_data.get("total_holders")
+    
+    # 记录详情
+    details["chain"] = onchain_data.get("chain")
+    details["contract_address"] = onchain_data.get("contract_address")
+    details["top_holders_pct"] = top_holders_pct
+    details["total_holders"] = total_holders
+    details["concentration_risk"] = concentration_risk
+    details["data_source"] = onchain_data.get("data_source")
+    
+    # 评分规则 1：Top 10 持有者占比过高
+    if top_holders_pct is not None:
+        if top_holders_pct > 0.6:
+            # Top 10 持有 > 60%：扣 4 分
+            deductions.append({
+                "reason": "Top 10 持有者占比过高（> 60%）",
+                "points": 4,
+                "detail": f"Top 10 持有占比 {top_holders_pct:.1%}，极端集中，砸盘风险极高"
+            })
+        elif top_holders_pct > 0.4:
+            # Top 10 持有 40%-60%：扣 2 分
+            deductions.append({
+                "reason": "Top 10 持有者占比较高（40%-60%）",
+                "points": 2,
+                "detail": f"Top 10 持有占比 {top_holders_pct:.1%}，存在一定砸盘风险"
+            })
+    
+    # 评分规则 2：持有者总数过少
+    if total_holders is not None and total_holders > 0:
+        if total_holders < 1000:
+            # 持有者 < 1000：扣 3 分
+            deductions.append({
+                "reason": "持有者总数过少（< 1000）",
+                "points": 3,
+                "detail": f"持有者仅 {total_holders} 人，流动性差，容易被控盘"
+            })
+        elif total_holders < 5000:
+            # 持有者 1000-5000：扣 1 分
+            deductions.append({
+                "reason": "持有者总数较少（1000-5000）",
+                "points": 1,
+                "detail": f"持有者 {total_holders} 人，流动性一般"
+            })
+    
+    # 计算最终分数
+    total_deduction = sum(d["points"] for d in deductions)
+    final_score = max(0, base_score - total_deduction)
+    
+    return {
+        "score": final_score,
+        "max": 10,
+        "details": details,
+        "deductions": deductions,
+        "data_available": True
+    }
+
+
+def compute_rule_scores(data: dict, tokenomics_data: dict = None, onchain_data: dict = None) -> dict:
+    """
+    计算所有维度规则评分（7维度）+ 规则风险评分
     返回完整评分结果，供 claude_analyzer 使用
+    
+    权重分配（总分100）：
+    - market（市场规模）: 25分
+    - community（社区活跃度）: 15分
+    - technical（技术实力）: 15分
+    - competitive（竞争位置）: 15分（由Claude评定）
+    - risk（风险信号）: 10分
+    - tokenomics（代币经济）: 10分
+    - onchain（链上健康度）: 10分
+    
+    Args:
+        data: Token 数据字典
+        tokenomics_data: Tokenomics 分析数据，为 None 时使用默认满分
+        onchain_data: 链上数据，为 None 时使用默认满分
+    
+    Returns:
+        包含各维度评分的字典
     """
-    market = score_market(data)
-    community = score_community(data)
-    technical = score_technical(data)
-    risk_rules = score_risk_rules(data)
+    # 计算原始评分
+    market_raw = score_market(data)
+    community_raw = score_community(data)
+    technical_raw = score_technical(data)
+    risk_rules_raw = score_risk_rules(data)
+
+    # 等比例缩放到新满分值
+    # market: 原满分30 → 新满分25，缩放系数 25/30
+    market = {
+        "score": round(market_raw["score"] * 25 / 30),
+        "max": 25,
+        "details": market_raw.get("details", {}),
+        "original_score": market_raw["score"],
+        "original_max": 30,
+    }
+    
+    # community: 原满分20 → 新满分15，缩放系数 15/20
+    community = {
+        "score": round(community_raw["score"] * 15 / 20),
+        "max": 15,
+        "details": community_raw.get("details", {}),
+        "warnings": community_raw.get("warnings", []),
+        "original_score": community_raw["score"],
+        "original_max": 20,
+    }
+    
+    # technical: 原满分20 → 新满分15，缩放系数 15/20
+    technical = {
+        "score": round(technical_raw["score"] * 15 / 20),
+        "max": 15,
+        "details": technical_raw.get("details", {}),
+        "original_score": technical_raw["score"],
+        "original_max": 20,
+    }
+    
+    # risk: 原满分15 → 新满分10，缩放系数 10/15
+    risk_rules = {
+        "score": round(risk_rules_raw["score"] * 10 / 15),
+        "max": 10,
+        "base": risk_rules_raw.get("base", 15),
+        "deductions": risk_rules_raw.get("deductions", []),
+        "total_deduction": risk_rules_raw.get("total_deduction", 0),
+        "original_score": risk_rules_raw["score"],
+        "original_max": 15,
+    }
+    
+    # Tokenomics 评分（满分10）
+    if tokenomics_data:
+        tokenomics = score_tokenomics(tokenomics_data)
+    else:
+        tokenomics = {
+            "score": 10,
+            "max": 10,
+            "data_available": False,
+            "details": {"message": "Tokenomics 数据未提供，使用默认满分"},
+            "deductions": [],
+        }
+    
+    # 链上健康度评分（满分10）
+    if onchain_data:
+        onchain = score_onchain(onchain_data)
+    else:
+        onchain = {
+            "score": 10,
+            "max": 10,
+            "data_available": False,
+            "details": {"message": "链上数据未提供，使用默认满分"},
+            "deductions": [],
+        }
 
     subtotal = market["score"] + community["score"] + technical["score"]
 
@@ -252,6 +531,8 @@ def compute_rule_scores(data: dict) -> dict:
         "community": community,
         "technical": technical,
         "risk_rules": risk_rules,
+        "tokenomics": tokenomics,
+        "onchain": onchain,
         "subtotal_rules": subtotal,  # 前3维度合计（不含 Claude 的后2维度）
         "warnings": community.get("warnings", []),
     }

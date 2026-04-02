@@ -19,3 +19,73 @@
 2026-03-31 09:44:20 - token_lens - INFO - info:60 - Fetching data for token: ethereum
 2026-03-31 09:44:21 - token_lens - INFO - info:60 - API Success: CoinGecko.get_token_data - Completed in 0.90s
 2026-03-31 09:44:22 - token_lens - INFO - info:60 - Using demo mode for Ethereum
+2026-04-02 09:17:56 - token_lens - INFO - info:60 - API Call: CoinGecko - https://api.coingecko.com/api/v3/search with params {'query': 'btc'}
+2026-04-02 09:18:13 - token_lens - ERROR - error:68 - API Error: CoinGecko.search_token - 网络请求失败：HTTPSConnectionPool(host='api.coingecko.com', port=443): Read timed out. (read timeout=10) (took 17.08s)
+2026-04-02 09:18:13 - token_lens - ERROR - error:68 - Function search_token failed: 网络请求失败：HTTPSConnectionPool(host='api.coingecko.com', port=443): Read timed out. (read timeout=10)
+Traceback (most recent call last):
+  File "/Users/admin/Library/Python/3.9/lib/python/site-packages/urllib3/connectionpool.py", line 464, in _make_request
+    self._validate_conn(conn)
+  File "/Users/admin/Library/Python/3.9/lib/python/site-packages/urllib3/connectionpool.py", line 1093, in _validate_conn
+    conn.connect()
+  File "/Users/admin/Library/Python/3.9/lib/python/site-packages/urllib3/connection.py", line 790, in connect
+    sock_and_verified = _ssl_wrap_socket_and_match_hostname(
+  File "/Users/admin/Library/Python/3.9/lib/python/site-packages/urllib3/connection.py", line 969, in _ssl_wrap_socket_and_match_hostname
+    ssl_sock = ssl_wrap_socket(
+  File "/Users/admin/Library/Python/3.9/lib/python/site-packages/urllib3/util/ssl_.py", line 480, in ssl_wrap_socket
+    ssl_sock = _ssl_wrap_socket_impl(sock, context, tls_in_tls, server_hostname)
+  File "/Users/admin/Library/Python/3.9/lib/python/site-packages/urllib3/util/ssl_.py", line 524, in _ssl_wrap_socket_impl
+    return ssl_context.wrap_socket(sock, server_hostname=server_hostname)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/ssl.py", line 500, in wrap_socket
+    return self.sslsocket_class._create(
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/ssl.py", line 1040, in _create
+    self.do_handshake()
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/ssl.py", line 1309, in do_handshake
+    self._sslobj.do_handshake()
+socket.timeout: _ssl.c:1112: The handshake operation timed out
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/admin/Library/Python/3.9/lib/python/site-packages/requests/adapters.py", line 644, in send
+    resp = conn.urlopen(
+  File "/Users/admin/Library/Python/3.9/lib/python/site-packages/urllib3/connectionpool.py", line 841, in urlopen
+    retries = retries.increment(
+  File "/Users/admin/Library/Python/3.9/lib/python/site-packages/urllib3/util/retry.py", line 474, in increment
+    raise reraise(type(error), error, _stacktrace)
+  File "/Users/admin/Library/Python/3.9/lib/python/site-packages/urllib3/util/util.py", line 39, in reraise
+    raise value
+  File "/Users/admin/Library/Python/3.9/lib/python/site-packages/urllib3/connectionpool.py", line 787, in urlopen
+    response = self._make_request(
+  File "/Users/admin/Library/Python/3.9/lib/python/site-packages/urllib3/connectionpool.py", line 488, in _make_request
+    raise new_e
+  File "/Users/admin/Library/Python/3.9/lib/python/site-packages/urllib3/connectionpool.py", line 466, in _make_request
+    self._raise_timeout(err=e, url=url, timeout_value=conn.timeout)
+  File "/Users/admin/Library/Python/3.9/lib/python/site-packages/urllib3/connectionpool.py", line 367, in _raise_timeout
+    raise ReadTimeoutError(
+urllib3.exceptions.ReadTimeoutError: HTTPSConnectionPool(host='api.coingecko.com', port=443): Read timed out. (read timeout=10)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/admin/Downloads/coin_listing_system-main/collectors/coingecko.py", line 49, in search_token
+    resp = requests.get(
+  File "/Users/admin/Library/Python/3.9/lib/python/site-packages/requests/api.py", line 73, in get
+    return request("get", url, params=params, **kwargs)
+  File "/Users/admin/Library/Python/3.9/lib/python/site-packages/requests/api.py", line 59, in request
+    return session.request(method=method, url=url, **kwargs)
+  File "/Users/admin/Library/Python/3.9/lib/python/site-packages/requests/sessions.py", line 589, in request
+    resp = self.send(prep, **send_kwargs)
+  File "/Users/admin/Library/Python/3.9/lib/python/site-packages/requests/sessions.py", line 703, in send
+    r = adapter.send(request, **kwargs)
+  File "/Users/admin/Library/Python/3.9/lib/python/site-packages/requests/adapters.py", line 690, in send
+    raise ReadTimeout(e, request=request)
+requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='api.coingecko.com', port=443): Read timed out. (read timeout=10)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/admin/Downloads/coin_listing_system-main/utils/logger.py", line 107, in wrapper
+    result = func(*args, **kwargs)
+  File "/Users/admin/Downloads/coin_listing_system-main/collectors/coingecko.py", line 88, in search_token
+    raise RuntimeError(error_msg)
+RuntimeError: 网络请求失败：HTTPSConnectionPool(host='api.coingecko.com', port=443): Read timed out. (read timeout=10)

@@ -84,10 +84,31 @@ class Database:
                 )
             """)
             
+            # 预测跟踪表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS prediction_tracking (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    assessment_id INTEGER NOT NULL,
+                    coin_id TEXT NOT NULL,
+                    coin_name TEXT,
+                    predicted_score INTEGER,
+                    predicted_verdict TEXT,
+                    actual_return_30d FLOAT,
+                    actual_return_90d FLOAT,
+                    actual_verdict TEXT,
+                    is_accurate BOOLEAN,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    verified_at TIMESTAMP,
+                    FOREIGN KEY (assessment_id) REFERENCES assessment_history(id)
+                )
+            """)
+            
             # 创建索引
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_history_coin_id ON assessment_history(coin_id)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_history_created_at ON assessment_history(created_at)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_cache_expires ON data_cache(expires_at)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_prediction_coin_id ON prediction_tracking(coin_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_prediction_verified ON prediction_tracking(verified_at)")
             
             conn.commit()
     
@@ -409,6 +430,344 @@ class Database:
                     result['result_json'] = json.loads(result['result_json'])
                 results.append(result)
             return results
+    
+    # ========== 预测跟踪操作 ==========
+    
+    def save_prediction(self, assessment_id: int, coin_id: str, coin_name: str,
+                        predicted_score: int, predicted_verdict: str) -> int:
+        """
+        保存预测记录
+        
+        Args:
+            assessment_id: 关联的评估记录ID
+            coin_id: CoinGecko coin ID
+            coin_name: Token 名称
+            predicted_score: 预测分数
+            predicted_verdict: 预测结论
+            
+        Returns:
+            预测ID
+        """
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO prediction_tracking 
+                    (assessment_id, coin_id, coin_name, predicted_score, predicted_verdict)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (assessment_id, coin_id, coin_name, predicted_score, predicted_verdict))
+                conn.commit()
+                return cursor.lastrowid
+        except Exception as e:
+            raise RuntimeError(f"保存预测记录失败：{e}")
+    
+    def update_actual_performance(self, prediction_id: int, 
+                                   actual_return_30d: float = None,
+                                   actual_return_90d: float = None) -> bool:
+        """
+        更新实际表现数据
+        
+        根据实际回报判断 actual_verdict:
+        - return_30d > 20%: "强烈推荐" 正确
+        - return_30d between -30% and 20%: "建议观望" 正确
+        - return_30d < -30%: "不建议上币" 正确
+        
+        Args:
+            prediction_id: 预测记录ID
+            actual_return_30d: 30天实际回报率（百分比）
+            actual_return_90d: 90天实际回报率（百分比）
+            
+        Returns:
+            是否更新成功
+        """
+        try:
+            # 获取当前预测记录
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT predicted_verdict FROM prediction_tracking WHERE id = ?
+                """, (prediction_id,))
+                row = cursor.fetchone()
+                if not row:
+                    return False
+                
+                predicted_verdict = row['predicted_verdict']
+                
+                # 根据30天回报确定实际结论
+                actual_verdict = None
+                if actual_return_30d is not None:
+                    if actual_return_30d > 20:
+                        actual_verdict = "强烈推荐"
+                    elif actual_return_30d < -30:
+                        actual_verdict = "不建议上币"
+                    else:
+                        actual_verdict = "建议观望"
+                
+                # 判断预测是否准确
+                is_accurate = None
+                if actual_verdict and predicted_verdict:
+                    is_accurate = (predicted_verdict == actual_verdict)
+                
+                # 更新记录
+                cursor.execute("""
+                    UPDATE prediction_tracking 
+                    SET actual_return_30d = ?,
+                        actual_return_90d = ?,
+                        actual_verdict = ?,
+                        is_accurate = ?,
+                        verified_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                """, (actual_return_30d, actual_return_90d, actual_verdict, is_accurate, prediction_id))
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception as e:
+            raise RuntimeError(f"更新实际表现失败：{e}")
+    
+    def calculate_accuracy(self) -> dict:
+        """
+        计算预测准确率
+        
+        Returns:
+            {
+                'total_predictions': int,
+                'verified_predictions': int,
+                'accuracy': float,  # 0-1
+                'precision_by_verdict': {
+                    '强烈推荐': {'correct': int, 'total': int, 'precision': float},
+                    '建议观望': {...},
+                    '不建议上币': {...}
+                },
+                'confusion_matrix': dict
+            }
+        """
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # 获取总预测数
+                cursor.execute("SELECT COUNT(*) FROM prediction_tracking")
+                total_predictions = cursor.fetchone()[0]
+                
+                # 获取已验证预测数
+                cursor.execute("SELECT COUNT(*) FROM prediction_tracking WHERE verified_at IS NOT NULL")
+                verified_predictions = cursor.fetchone()[0]
+                
+                # 获取准确预测数
+                cursor.execute("SELECT COUNT(*) FROM prediction_tracking WHERE is_accurate = 1")
+                accurate_count = cursor.fetchone()[0]
+                
+                # 计算总体准确率
+                accuracy = accurate_count / verified_predictions if verified_predictions > 0 else 0.0
+                
+                # 按预测结论统计准确率
+                verdicts = ['强烈推荐', '建议观望', '不建议上币']
+                precision_by_verdict = {}
+                
+                for verdict in verdicts:
+                    cursor.execute("""
+                        SELECT COUNT(*) FROM prediction_tracking 
+                        WHERE predicted_verdict = ? AND verified_at IS NOT NULL
+                    """, (verdict,))
+                    total = cursor.fetchone()[0]
+                    
+                    cursor.execute("""
+                        SELECT COUNT(*) FROM prediction_tracking 
+                        WHERE predicted_verdict = ? AND is_accurate = 1
+                    """, (verdict,))
+                    correct = cursor.fetchone()[0]
+                    
+                    precision_by_verdict[verdict] = {
+                        'correct': correct,
+                        'total': total,
+                        'precision': correct / total if total > 0 else 0.0
+                    }
+                
+                # 构建混淆矩阵
+                confusion_matrix = {}
+                for predicted in verdicts:
+                    confusion_matrix[predicted] = {}
+                    for actual in verdicts:
+                        cursor.execute("""
+                            SELECT COUNT(*) FROM prediction_tracking 
+                            WHERE predicted_verdict = ? AND actual_verdict = ?
+                        """, (predicted, actual))
+                        confusion_matrix[predicted][actual] = cursor.fetchone()[0]
+                
+                return {
+                    'total_predictions': total_predictions,
+                    'verified_predictions': verified_predictions,
+                    'accuracy': accuracy,
+                    'precision_by_verdict': precision_by_verdict,
+                    'confusion_matrix': confusion_matrix
+                }
+        except Exception as e:
+            raise RuntimeError(f"计算准确率失败：{e}")
+    
+    def get_unverified_predictions(self, min_age_days: int = 30) -> list:
+        """
+        获取超过指定天数但未验证的预测记录
+        
+        Args:
+            min_age_days: 最小天数阈值
+            
+        Returns:
+            未验证的预测记录列表
+        """
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT pt.*, ah.result_json
+                    FROM prediction_tracking pt
+                    LEFT JOIN assessment_history ah ON pt.assessment_id = ah.id
+                    WHERE pt.verified_at IS NULL 
+                    AND pt.created_at <= datetime('now', ?)
+                    ORDER BY pt.created_at ASC
+                """, (f'-{min_age_days} days',))
+                
+                results = []
+                for row in cursor.fetchall():
+                    result = dict(row)
+                    if result.get('result_json'):
+                        result['result_json'] = json.loads(result['result_json'])
+                    results.append(result)
+                return results
+        except Exception as e:
+            raise RuntimeError(f"获取未验证预测失败：{e}")
+    
+    def get_prediction_stats(self) -> dict:
+        """
+        获取预测统计概览（供诊断面板使用）
+        
+        Returns:
+            {
+                'total_predictions': int,
+                'verified_count': int,
+                'pending_count': int,
+                'accuracy_rate': float,
+                'by_verdict': dict,
+                'recent_predictions': list
+            }
+        """
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # 基础统计
+                cursor.execute("SELECT COUNT(*) FROM prediction_tracking")
+                total = cursor.fetchone()[0]
+                
+                cursor.execute("SELECT COUNT(*) FROM prediction_tracking WHERE verified_at IS NOT NULL")
+                verified = cursor.fetchone()[0]
+                
+                cursor.execute("SELECT COUNT(*) FROM prediction_tracking WHERE verified_at IS NULL")
+                pending = cursor.fetchone()[0]
+                
+                cursor.execute("SELECT COUNT(*) FROM prediction_tracking WHERE is_accurate = 1")
+                accurate = cursor.fetchone()[0]
+                
+                accuracy_rate = accurate / verified if verified > 0 else 0.0
+                
+                # 按预测结论统计
+                cursor.execute("""
+                    SELECT predicted_verdict, COUNT(*) as count 
+                    FROM prediction_tracking 
+                    GROUP BY predicted_verdict
+                """)
+                by_verdict = {row['predicted_verdict']: row['count'] for row in cursor.fetchall()}
+                
+                # 最近预测
+                cursor.execute("""
+                    SELECT id, coin_id, coin_name, predicted_score, predicted_verdict, 
+                           actual_verdict, is_accurate, created_at, verified_at
+                    FROM prediction_tracking
+                    ORDER BY created_at DESC
+                    LIMIT 10
+                """)
+                recent = [dict(row) for row in cursor.fetchall()]
+                
+                return {
+                    'total_predictions': total,
+                    'verified_count': verified,
+                    'pending_count': pending,
+                    'accuracy_rate': accuracy_rate,
+                    'by_verdict': by_verdict,
+                    'recent_predictions': recent
+                }
+        except Exception as e:
+            raise RuntimeError(f"获取预测统计失败：{e}")
+    
+    def get_failed_predictions(self) -> list:
+        """
+        获取所有预测失败的记录（用于权重分析）
+        
+        Returns:
+            预测失败的记录列表（包含关联的评估结果）
+        """
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT pt.*, ah.result_json
+                    FROM prediction_tracking pt
+                    LEFT JOIN assessment_history ah ON pt.assessment_id = ah.id
+                    WHERE pt.is_accurate = 0
+                    ORDER BY pt.verified_at DESC
+                """)
+                
+                results = []
+                for row in cursor.fetchall():
+                    result = dict(row)
+                    if result.get('result_json'):
+                        result['result_json'] = json.loads(result['result_json'])
+                    results.append(result)
+                return results
+        except Exception as e:
+            raise RuntimeError(f"获取失败预测失败：{e}")
+    
+    # ========== 基准对标操作 ==========
+    
+    def get_similar_assessments(self, coin_id: str, limit: int = 100) -> List[Dict[str, Any]]:
+        """
+        获取用于基准对标的历史评估记录（排除指定 coin_id）
+        
+        Args:
+            coin_id: 需要排除的 CoinGecko coin ID（当前正在评估的 Token）
+            limit: 返回数量限制
+            
+        Returns:
+            包含 result_json 的完整评估记录列表
+        """
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                
+                if coin_id:
+                    cursor.execute("""
+                        SELECT id, coin_id, coin_name, coin_symbol, total_score, 
+                               verdict, result_json, created_at
+                        FROM assessment_history
+                        WHERE coin_id != ?
+                        ORDER BY created_at DESC
+                        LIMIT ?
+                    """, (coin_id, limit))
+                else:
+                    cursor.execute("""
+                        SELECT id, coin_id, coin_name, coin_symbol, total_score, 
+                               verdict, result_json, created_at
+                        FROM assessment_history
+                        ORDER BY created_at DESC
+                        LIMIT ?
+                    """, (limit,))
+                
+                results = []
+                for row in cursor.fetchall():
+                    result = dict(row)
+                    # result_json 保持为字符串，由调用方解析
+                    results.append(result)
+                return results
+        except Exception as e:
+            raise RuntimeError(f"获取历史评估记录失败：{e}")
 
 
 # 全局数据库实例

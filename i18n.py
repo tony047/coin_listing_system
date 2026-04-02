@@ -14,6 +14,7 @@ LANGUAGES = {
         # 搜索
         "search_placeholder": "输入 Token 名称，如 ETH、HYPE、SUI...",
         "search_button": "🔍 搜索",
+        "search_hint": "输入任意 Token 名称，3 分钟内输出结构化上币评估报告。",
         "search_results": "找到 {count} 个结果",
         "search_not_found": "未找到「{query}」，请检查拼写或尝试英文名称",
         "search_failed": "搜索失败：{error}",
@@ -27,6 +28,7 @@ LANGUAGES = {
         
         # 快速演示
         "quick_demo": "快速演示",
+        "quick_start": "🚀 快速开始",
         "batch_eval": "📦 批量评估",
         "compare": "📊 对比 ({count}个)",
         
@@ -44,6 +46,8 @@ LANGUAGES = {
         "dimension_technical": "技术实力",
         "dimension_competitive": "竞争位置",
         "dimension_risk": "风险信号",
+        "dimension_tokenomics": "Tokenomics",
+        "dimension_onchain": "链上健康度",
         "threshold": "阈值: 🟢≥75 / 🟡55-74 / 🔴<55",
         
         # 评估记录
@@ -63,9 +67,9 @@ LANGUAGES = {
         "try_hint": "💡 点击左侧 **快速演示** 按钮立即体验，或在上方搜索框输入 Token 名称",
         
         # 报告
-        "verdict_strong": "🟢 **强烈推荐上币** · {score}/100 分",
-        "verdict_watch": "🟡 **建议观望** · {score}/100 分",
-        "verdict_not_recommend": "🔴 **不建议上币** · {score}/100 分",
+        "verdict_strong": "🟢 <strong>强烈推荐上币</strong>",
+        "verdict_watch": "🟡 <strong>建议观望</strong>",
+        "verdict_not_recommend": "🔴 <strong>不建议上币</strong>",
         "analysis_time": "⏱️ 分析耗时 {time:.1f} 秒",
         
         # Tabs
@@ -126,6 +130,26 @@ LANGUAGES = {
         
         # 其他
         "na": "N/A",
+        
+        # 诊断面板
+        "diagnostics_title": "📊 系统诊断",
+        "diag_total_predictions": "预测总数",
+        "diag_verified": "已验证",
+        "diag_accuracy": "准确率",
+        "diag_data_coverage": "数据覆盖",
+        "diag_accuracy_by_verdict": "各结论准确率",
+        "diag_no_verified_data": "暂无已验证的预测数据，评估记录满30天后将自动验证",
+        "diag_weight_suggestions": "权重优化建议",
+        "diag_insufficient_data": "数据不足，需要更多已验证的评估记录",
+        "diag_error": "诊断异常",
+        "diag_run_backtest": "🔄 运行回测",
+        "diag_backtest_running": "正在回测...",
+        "diag_backtest_complete": "回测完成",
+        "progress_tokenomics": "Tokenomics 分析...",
+        "progress_onchain": "链上数据分析...",
+        "progress_benchmark": "基准对标...",
+        "new_search": "重置搜索",
+        
         "demo_tokens": [
             {"label": "⭐ ETH", "id": "ethereum", "name": "Ethereum", "symbol": "ETH"},
             {"label": "🔴 HYPE", "id": "hyperliquid", "name": "Hyperliquid", "symbol": "HYPE"},
@@ -143,6 +167,7 @@ LANGUAGES = {
         # Search
         "search_placeholder": "Enter token name, e.g. ETH, HYPE, SUI...",
         "search_button": "🔍 Search",
+        "search_hint": "Enter any token name to get a structured assessment report in 3 minutes.",
         "search_results": "Found {count} results",
         "search_not_found": "Token「{query}」not found, please check spelling",
         "search_failed": "Search failed: {error}",
@@ -156,6 +181,7 @@ LANGUAGES = {
         
         # Quick Demo
         "quick_demo": "Quick Demo",
+        "quick_start": "🚀 Quick Start",
         "batch_eval": "📦 Batch Assessment",
         "compare": "📊 Compare ({count} items)",
         
@@ -173,6 +199,8 @@ LANGUAGES = {
         "dimension_technical": "Technology",
         "dimension_competitive": "Competition",
         "dimension_risk": "Risk",
+        "dimension_tokenomics": "Tokenomics",
+        "dimension_onchain": "On-chain Health",
         "threshold": "Threshold: 🟢≥75 / 🟡55-74 / 🔴<55",
         
         # History
@@ -192,9 +220,9 @@ LANGUAGES = {
         "try_hint": "💡 Click **Quick Demo** on the left to try, or enter a token name above",
         
         # Report
-        "verdict_strong": "🟢 **Strongly Recommend** · {score}/100",
-        "verdict_watch": "🟡 **Watch** · {score}/100",
-        "verdict_not_recommend": "🔴 **Not Recommended** · {score}/100",
+        "verdict_strong": "🟢 <strong>Strongly Recommend</strong>",
+        "verdict_watch": "🟡 <strong>Watch</strong>",
+        "verdict_not_recommend": "🔴 <strong>Not Recommended</strong>",
         "analysis_time": "⏱️ Analysis time: {time:.1f}s",
         
         # Tabs
@@ -255,6 +283,26 @@ LANGUAGES = {
         
         # Other
         "na": "N/A",
+        
+        # Diagnostics Panel
+        "diagnostics_title": "📊 System Diagnostics",
+        "diag_total_predictions": "Total Predictions",
+        "diag_verified": "Verified",
+        "diag_accuracy": "Accuracy",
+        "diag_data_coverage": "Data Coverage",
+        "diag_accuracy_by_verdict": "Accuracy by Verdict",
+        "diag_no_verified_data": "No verified prediction data yet. Records will be auto-verified after 30 days.",
+        "diag_weight_suggestions": "Weight Optimization Suggestions",
+        "diag_insufficient_data": "Insufficient data, need more verified assessment records",
+        "diag_error": "Diagnostics Error",
+        "diag_run_backtest": "🔄 Run Backtest",
+        "diag_backtest_running": "Running backtest...",
+        "diag_backtest_complete": "Backtest completed",
+        "progress_tokenomics": "Tokenomics analysis...",
+        "progress_onchain": "On-chain data analysis...",
+        "progress_benchmark": "Benchmark comparison...",
+        "new_search": "Reset Search",
+        
         "demo_tokens": [
             {"label": "⭐ ETH", "id": "ethereum", "name": "Ethereum", "symbol": "ETH"},
             {"label": "🔴 HYPE", "id": "hyperliquid", "name": "Hyperliquid", "symbol": "HYPE"},

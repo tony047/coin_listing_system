@@ -10,12 +10,18 @@ from dotenv import load_dotenv
 
 from collectors.coingecko import search_token, get_token_data
 from collectors.defillama import enrich_token_data
+from collectors.tokenomics import analyze_tokenomics
+from collectors.onchain import get_onchain_data
 from analyzer.scorer import compute_rule_scores
-from analyzer.claude_analyzer import analyze
+from analyzer.claude_analyzer import analyze, analyze_with_reflection
+from analyzer.benchmark import find_benchmarks
 from report.chart import build_radar_chart
 from report.pdf_export import export_pdf
 from database import init_db, get_db
 from i18n import get_text, get_demo_tokens
+from utils.logger import get_logger
+
+logger = get_logger()
 
 # 本地开发读 .env，Streamlit Cloud 读 st.secrets
 load_dotenv()
@@ -37,10 +43,10 @@ def t(key: str, **kwargs) -> str:
 
 # 路演演示 Token（coin_id 固定，点击直接触发评估，无需搜索选择）
 DEMO_TOKENS = [
-    {"label": "⭐ ETH — 强烈推荐（91分）",    "id": "ethereum",    "name": "Ethereum",    "symbol": "ETH"},
-    {"label": "🔴 HYPE — 高紧迫性（未上BYDFi）","id": "hyperliquid", "name": "Hyperliquid", "symbol": "HYPE"},
-    {"label": "🟡 SEI — 不建议（零提交风险）",  "id": "sei-network", "name": "Sei",         "symbol": "SEI"},
-    {"label": "🔵 SUI — 建议观望",             "id": "sui",         "name": "Sui",         "symbol": "SUI"},
+    {"label": "⭐ ETH",  "id": "ethereum",    "name": "Ethereum",    "symbol": "ETH"},
+    {"label": "🔴 HYPE", "id": "hyperliquid", "name": "Hyperliquid", "symbol": "HYPE"},
+    {"label": "🟡 SEI",  "id": "sei-network", "name": "Sei",         "symbol": "SEI"},
+    {"label": "🔵 SUI",  "id": "sui",         "name": "Sui",         "symbol": "SUI"},
 ]
 
 # ── 全局样式 ──────────────────────────────────────────────
@@ -49,7 +55,7 @@ def _inject_css():
     # 只使用暗色主题
     bg_color = "#0a0a0b"
     text_color = "#fafafa"
-    text_muted = "#71717a"
+    text_muted = "#a1a1aa"
     card_bg = "#141415"
     card_border = "#27272a"
     accent_color = "#6366f1"
@@ -70,6 +76,11 @@ section[data-testid="stSidebar"] {{
 /* ===== 全局样式 ===== */
 .stApp {{
     background-color: {bg_color};
+}}
+
+/* 减少顶部区域空白 */
+.main .block-container {{
+    padding-top: 1rem;
 }}
 
 /* 标题样式 */
@@ -127,6 +138,11 @@ p, span, div {{
     box-shadow: 0 2px 8px rgba(0,0,0,0.15) !important;
 }}
 
+/* 主要按钮 hover 微光效果 */
+button[kind="primary"]:hover, .stButton > button[kind="primaryFormSubmit"]:hover {{
+    box-shadow: 0 0 20px rgba(99, 102, 241, 0.3) !important;
+}}
+
 /* 主要按钮 */
 .stButton > button[kind="primary"] {{
     background-color: {accent_color} !important;
@@ -162,8 +178,8 @@ section[data-testid="stSidebar"] .stButton > button {{
 
 /* ===== 进度条样式 ===== */
 [data-testid="stProgress"] > div > div {{
-    height: 6px !important;
-    border-radius: 3px !important;
+    height: 10px !important;
+    border-radius: 5px !important;
     background-color: {card_border} !important;
 }}
 
@@ -172,15 +188,24 @@ section[data-testid="stSidebar"] .stButton > button {{
 }}
 
 /* ===== Tab 样式 ===== */
-[data-testid="stTabs"] button {{
+.stTabs [data-baseweb="tab"] {{
+    transition: all 0.2s ease;
+    border-radius: 8px 8px 0 0;
+    padding: 0.5rem 1rem;
     font-size: 0.875rem !important;
-    padding: 0.5rem 1rem !important;
     color: {text_muted} !important;
 }}
 
-[data-testid="stTabs"] button[aria-selected="true"] {{
-    color: {accent_color} !important;
-    border-bottom-color: {accent_color} !important;
+.stTabs [data-baseweb="tab"]:hover {{
+    background: rgba(99, 102, 241, 0.05);
+}}
+
+/* Tab 选中态 - 增加底部粗线和背景 */
+.stTabs [data-baseweb="tab"][aria-selected="true"] {{
+    background: rgba(99, 102, 241, 0.1);
+    border-bottom: 3px solid {accent_color};
+    color: {text_color} !important;
+    font-weight: 600;
 }}
 
 /* ===== 侧边栏样式 ===== */
@@ -201,11 +226,13 @@ section[data-testid="stSidebar"] .element-container {{
     background: {card_bg};
     color: {text_color};
     margin-bottom: 0.75rem;
-    transition: box-shadow 0.2s ease;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
 }}
 
 .feature-card:hover {{
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    transform: translateY(-4px);
+    box-shadow: 0 8px 25px rgba(99, 102, 241, 0.15);
+    border-color: {accent_color};
 }}
 
 .history-card {{
@@ -247,6 +274,11 @@ section[data-testid="stSidebar"] .element-container {{
     border-bottom: 1px solid {card_border} !important;
 }}
 
+/* 表格行 hover 高亮 */
+table tbody tr:hover {{
+    background: rgba(99, 102, 241, 0.08) !important;
+}}
+
 /* ===== Selectbox 样式 ===== */
 [data-testid="stSelectbox"] {{
     max-width: 400px !important;
@@ -283,6 +315,11 @@ hr {{
     background-color: {card_bg} !important;
     border: 1px solid {card_border} !important;
     border-radius: 6px !important;
+}}
+
+.streamlit-expanderHeader {{
+    border-left: 3px solid {accent_color};
+    padding-left: 1rem;
 }}
 
 /* ===== 文字不换行优化 ===== */
@@ -329,14 +366,35 @@ hr {{
 # ── 工具函数 ──────────────────────────────────────────────
 
 def _fmt_usd(value) -> str:
-    """格式化美元金额"""
+    """格式化美元金额，支持 T/B/M/K 单位"""
     if value is None:
         return "N/A"
-    if value >= 1_000_000_000:
-        return f"${value / 1_000_000_000:.2f}B"
-    if value >= 1_000_000:
-        return f"${value / 1_000_000:.1f}M"
-    return f"${value:,.0f}"
+    if isinstance(value, str):
+        try:
+            value = float(value.replace(",", ""))
+        except (ValueError, AttributeError):
+            return str(value)
+    if value >= 1e12:
+        return f"${value / 1e12:.2f}T"
+    if value >= 1e9:
+        return f"${value / 1e9:.2f}B"
+    if value >= 1e6:
+        return f"${value / 1e6:.2f}M"
+    if value >= 1e3:
+        return f"${value / 1e3:.1f}K"
+    return f"${value:.2f}"
+
+
+def _score_bar_color(pct: float) -> str:
+    """根据得分百分比返回颜色"""
+    if pct >= 0.8:
+        return "#22c55e"  # 绿色 - 优秀
+    elif pct >= 0.6:
+        return "#6366f1"  # 蓝色 - 良好
+    elif pct >= 0.4:
+        return "#eab308"  # 黄色 - 一般
+    else:
+        return "#ef4444"  # 红色 - 较差
 
 
 def _score_color(pct: float) -> str:
@@ -402,11 +460,13 @@ def _generate_report_md(result: dict) -> str:
         f"",
         f"| 维度 | 得分 | 满分 |",
         f"|------|------|------|",
-        f"| 市场规模 | {scores['market']['score']} | 30 |",
-        f"| 社区活跃度 | {scores['community']['score']} | 20 |",
-        f"| 技术实力 | {scores['technical']['score']} | 20 |",
+        f"| 市场规模 | {scores['market']['score']} | 25 |",
+        f"| 社区活跃度 | {scores['community']['score']} | 15 |",
+        f"| 技术实力 | {scores['technical']['score']} | 15 |",
         f"| 竞争位置 | {scores['competitive']['score']} | 15 |",
-        f"| 风险信号 | {scores['risk']['score']} | 15 |",
+        f"| 风险信号 | {scores['risk']['score']} | 10 |",
+        f"| Tokenomics | {scores.get('tokenomics', {}).get('score', 10)} | 10 |",
+        f"| 链上健康度 | {scores.get('onchain', {}).get('score', 10)} | 10 |",
         f"| **总分** | **{total}** | **100** |",
         f"",
         f"---",
@@ -446,6 +506,129 @@ def _generate_report_md(result: dict) -> str:
     return "\n".join(lines)
 
 
+# ── 诊断面板 ──────────────────────────────────────────────
+
+def _render_diagnostics_panel():
+    """渲染系统诊断面板"""
+    import json
+    db = get_db()
+    
+    # 第一行：核心指标（4列）
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        try:
+            stats = db.get_prediction_stats()
+            st.metric(t("diag_total_predictions"), stats.get("total_predictions", 0))
+        except Exception:
+            st.metric(t("diag_total_predictions"), 0)
+    
+    with col2:
+        try:
+            stats = db.get_prediction_stats()
+            st.metric(t("diag_verified"), stats.get("verified_count", 0))
+        except Exception:
+            st.metric(t("diag_verified"), 0)
+    
+    with col3:
+        try:
+            stats = db.get_prediction_stats()
+            accuracy = stats.get("accuracy_rate")  # Note: get_prediction_stats uses 'accuracy_rate'
+            st.metric(t("diag_accuracy"), f"{accuracy:.1%}" if accuracy is not None else "N/A")
+        except Exception:
+            st.metric(t("diag_accuracy"), "N/A")
+    
+    with col4:
+        # 数据覆盖率：从最近10条评估中统计 tokenomics/onchain 数据可用比例
+        try:
+            history = db.get_history(limit=10)
+            tokenomics_available = 0
+            onchain_available = 0
+            total_checked = 0
+            for record in history:
+                try:
+                    # get_history returns records without result_json, need to fetch full record
+                    full_record = db.get_assessment_by_id(record.get("id"))
+                    if not full_record:
+                        continue
+                    result = full_record.get("result_json", {})
+                    if isinstance(result, str):
+                        result = json.loads(result)
+                    final_scores = result.get("final_scores", {})
+                    if final_scores.get("tokenomics", {}).get("data_available", False):
+                        tokenomics_available += 1
+                    if final_scores.get("onchain", {}).get("data_available", False):
+                        onchain_available += 1
+                    total_checked += 1
+                except Exception:
+                    pass
+            coverage = f"{tokenomics_available + onchain_available}/{total_checked * 2}" if total_checked > 0 else "N/A"
+            st.metric(t("diag_data_coverage"), coverage)
+        except Exception:
+            st.metric(t("diag_data_coverage"), "N/A")
+    
+    st.markdown("---")
+    
+    # 第二行：按结论分类的准确率
+    try:
+        accuracy_data = db.calculate_accuracy()
+        if accuracy_data and accuracy_data.get("verified_predictions", 0) > 0:
+            st.subheader(t("diag_accuracy_by_verdict"))
+            precision = accuracy_data.get("precision_by_verdict", {})
+            
+            verdict_cols = st.columns(3)
+            for i, (verdict, data) in enumerate(precision.items()):
+                with verdict_cols[i % 3]:
+                    total = data.get("total", 0)
+                    correct = data.get("correct", 0)
+                    prec = data.get("precision", 0)
+                    st.metric(verdict, f"{prec:.0%}" if total > 0 else "N/A", 
+                             delta=f"{correct}/{total}")
+        else:
+            st.info(t("diag_no_verified_data"))
+    except Exception:
+        st.info(t("diag_no_verified_data"))
+    
+    st.markdown("---")
+    
+    # 第三行：权重优化建议
+    st.subheader(t("diag_weight_suggestions"))
+    try:
+        from analyzer.backtest import BacktestEngine
+        engine = BacktestEngine()
+        suggestions = engine.suggest_weight_adjustments()
+        
+        if suggestions and suggestions.get("failure_patterns"):
+            for pattern in suggestions["failure_patterns"]:
+                st.caption(f"**{pattern.get('dimension', '')}**: {pattern.get('suggestion', '')}")
+            
+            # 显示建议权重
+            suggested = suggestions.get("suggested_weights", {})
+            if suggested:
+                weight_cols = st.columns(len(suggested))
+                for i, (dim, weight) in enumerate(suggested.items()):
+                    with weight_cols[i]:
+                        st.metric(dim, f"{weight}")
+        else:
+            st.caption(t("diag_insufficient_data"))
+    except Exception as e:
+        st.caption(f"⚠️ {t('diag_error')}: {e}")
+    
+    st.markdown("---")
+    
+    # 第四行：运行回测按钮
+    if st.button(t("diag_run_backtest"), use_container_width=True):
+        with st.spinner(t("diag_backtest_running")):
+            try:
+                from analyzer.backtest import BacktestEngine
+                engine = BacktestEngine()
+                result = engine.run_backtest(max_records=20)
+                st.success(f"✅ {t('diag_backtest_complete')}")
+                st.json(result)
+            except Exception as e:
+                st.error(f"❌ {e}")
+
+
 # ── 首页引导 ──────────────────────────────────────────────
 
 def _render_homepage():
@@ -457,27 +640,26 @@ def _render_homepage():
     
     col1, col2, col3 = st.columns(3, gap="small")
     with col1:
-        st.markdown(f"""<div class="feature-card" style="text-align:center;">
-        <div style="font-size:2rem;margin-bottom:0.75rem">📡</div>
-        <div style="font-weight:600;margin-bottom:0.25rem">{t('feature_realtime')}</div>
-        <div style="color:#71717a;font-size:0.8rem">{t('feature_realtime_desc')}</div>
-        </div>""", unsafe_allow_html=True)
+        st.markdown(f'''<div class="feature-card" style="text-align:center; padding:1.5rem 1rem;">
+        <div style="font-size:2.5rem; margin-bottom:0.75rem;">📡</div>
+        <div style="font-weight:700; font-size:1rem; margin-bottom:0.5rem; color:#fafafa;">{t('feature_realtime')}</div>
+        <div style="color:#a1a1aa; font-size:0.85rem; line-height:1.5;">{t('feature_realtime_desc')}</div>
+        </div>''', unsafe_allow_html=True)
     with col2:
-        st.markdown(f"""<div class="feature-card" style="text-align:center;">
-        <div style="font-size:2rem;margin-bottom:0.75rem">🤖</div>
-        <div style="font-weight:600;margin-bottom:0.25rem">{t('feature_ai')}</div>
-        <div style="color:#71717a;font-size:0.8rem">{t('feature_ai_desc')}</div>
-        </div>""", unsafe_allow_html=True)
+        st.markdown(f'''<div class="feature-card" style="text-align:center; padding:1.5rem 1rem;">
+        <div style="font-size:2.5rem; margin-bottom:0.75rem;">🤖</div>
+        <div style="font-weight:700; font-size:1rem; margin-bottom:0.5rem; color:#fafafa;">{t('feature_ai')}</div>
+        <div style="color:#a1a1aa; font-size:0.85rem; line-height:1.5;">{t('feature_ai_desc')}</div>
+        </div>''', unsafe_allow_html=True)
     with col3:
-        st.markdown(f"""<div class="feature-card" style="text-align:center;">
-        <div style="font-size:2rem;margin-bottom:0.75rem">🏦</div>
-        <div style="font-weight:600;margin-bottom:0.25rem">{t('feature_bydfi')}</div>
-        <div style="color:#71717a;font-size:0.8rem">{t('feature_bydfi_desc')}</div>
-        </div>""", unsafe_allow_html=True)
+        st.markdown(f'''<div class="feature-card" style="text-align:center; padding:1.5rem 1rem;">
+        <div style="font-size:2.5rem; margin-bottom:0.75rem;">🏦</div>
+        <div style="font-weight:700; font-size:1rem; margin-bottom:0.5rem; color:#fafafa;">{t('feature_bydfi')}</div>
+        <div style="color:#a1a1aa; font-size:0.85rem; line-height:1.5;">{t('feature_bydfi_desc')}</div>
+        </div>''', unsafe_allow_html=True)
 
     # 快速开始区域
-    st.markdown("<div style=\"height:1.5rem;\"></div>", unsafe_allow_html=True)
-    st.markdown(f"**{t('quick_demo')}**")
+    st.markdown(f"<div style='margin-top:1.5rem; margin-bottom:0.5rem; font-size:0.85rem; color:#a1a1aa;'>{t('quick_start')}</div>", unsafe_allow_html=True)
     lang = st.session_state.get("lang", "zh")
     demo_tokens = get_demo_tokens(lang)
     demo_cols = st.columns(len(demo_tokens), gap="small")
@@ -487,34 +669,14 @@ def _render_homepage():
                 st.session_state["auto_coin"] = {"id": item["id"], "name": item["name"], "symbol": item["symbol"]}
                 st.rerun()
     
-    # 功能按钮行
-    st.markdown("<div style=\"height:1rem;\"></div>", unsafe_allow_html=True)
-    btn_col1, btn_col2, btn_col3 = st.columns(3)
-    with btn_col1:
-        if st.button(t("batch_eval"), use_container_width=True):
-            st.session_state["show_batch"] = True
-            st.rerun()
-    with btn_col2:
-        if st.session_state.get("compare_list"):
-            if st.button(t("compare", count=len(st.session_state['compare_list'])), use_container_width=True):
-                st.session_state["show_compare"] = True
-                st.rerun()
-    with btn_col3:
-        # 系统状态
-        demo_mode = os.getenv("DEMO_MODE", "").lower() == "true"
-        if demo_mode:
-            st.caption(t("demo_mode"))
-        else:
-            has_key = bool(os.getenv("ANTHROPIC_API_KEY", "").strip())
-            st.caption(f"API: {'✅' if has_key else '❌'}")
     
     # 评估历史
     history = [k.replace("result_", "") for k in st.session_state if k.startswith("result_")]
     db_history = get_db().get_history(limit=5)
     
     if history or db_history:
-        st.markdown("<div style=\"height:1rem;\"></div>", unsafe_allow_html=True)
-        st.markdown(f"**{t('history_title')}**")
+        st.markdown("<div style='height:1.5rem;'></div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='font-size:0.85rem; color:#a1a1aa; margin-bottom:0.5rem;'>📝 {t('history_title')}</div>", unsafe_allow_html=True)
         
         seen_ids = set()
         display_records = []
@@ -555,15 +717,21 @@ def _render_homepage():
     st.markdown("<div style=\"height:1rem;\"></div>", unsafe_allow_html=True)
     with st.expander(t("score_help")):
         st.markdown(f"""
-        | {t('dimension_market')} | 30% |
+        | {t('dimension_market')} | 25% |
         |---|---|
-        | {t('dimension_community')} | 20% |
-        | {t('dimension_technical')} | 20% |
+        | {t('dimension_community')} | 15% |
+        | {t('dimension_technical')} | 15% |
         | {t('dimension_competitive')} | 15% |
-        | {t('dimension_risk')} | 15% |
+        | {t('dimension_risk')} | 10% |
+        | {t('dimension_tokenomics')} | 10% |
+        | {t('dimension_onchain')} | 10% |
         
         {t('threshold')}
         """)
+    
+    # 诊断面板（默认折叠）
+    with st.expander(t("diagnostics_title"), expanded=False):
+        _render_diagnostics_panel()
 
 
 # ── 报告渲染 ─────────────────────────────────────────────
@@ -580,19 +748,28 @@ def _render_report(result: dict):
     # 结论横幅 - 突出显示
     if total >= 75:
         verdict_class = "success"
-        verdict_text = t("verdict_strong", score=total)
+        verdict_text = t("verdict_strong")
+        color = "#22c55e"
+        rgb = "34,197,94"
     elif total >= 55:
         verdict_class = "warning"
-        verdict_text = t("verdict_watch", score=total)
+        verdict_text = t("verdict_watch")
+        color = "#eab308"
+        rgb = "234,179,8"
     else:
         verdict_class = "error"
-        verdict_text = t("verdict_not_recommend", score=total)
-        
-    st.markdown(f"""
-    <div style="padding:1rem 1.25rem;border-radius:8px;margin-bottom:0.5rem;background:rgba({'34,197,94' if verdict_class=='success' else ('234,179,8' if verdict_class=='warning' else '239,68,68')},0.15);border-left:4px solid {'#22c55e' if verdict_class=='success' else ('#eab308' if verdict_class=='warning' else '#ef4444')};">
-        <span style="font-size:1.1rem;">{verdict_text}</span>
+        verdict_text = t("verdict_not_recommend")
+        color = "#ef4444"
+        rgb = "239,68,68"
+    
+    lang = st.session_state.get("lang", "zh")
+    score_suffix = "分" if lang == "zh" else ""
+    st.markdown(f'''
+    <div style="padding:1.25rem 1.5rem; border-radius:10px; margin-bottom:0.75rem; background:rgba({rgb},0.15); border-left:4px solid {color}; display:flex; align-items:center; justify-content:space-between;">
+        <span style="font-size:1.2rem; color:#fafafa;">{verdict_text}</span>
+        <span style="font-size:1.5rem; font-weight:800; color:{color};">{total}/100 {score_suffix}</span>
     </div>
-    """, unsafe_allow_html=True)
+    ''', unsafe_allow_html=True)
     
     # 耗时和下载按钮 - 同一行
     col_time, col_dl = st.columns([2, 1])
@@ -608,10 +785,12 @@ def _render_report(result: dict):
         except Exception:
             pass
             
-        dl_col1, dl_col2 = st.columns(2)
+        # 下载按钮 - 等宽并排
+        st.markdown('<div style="display:flex; gap:0.5rem; margin-top:0.25rem;">', unsafe_allow_html=True)
+        dl_col1, dl_col2 = st.columns(2, gap="small")
         with dl_col1:
             st.download_button(
-                label=t("download_md"),
+                label=f"📄 {t('download_md')}",
                 data=report_md,
                 file_name=f"token_lens_{token.get('symbol', 'report').lower()}.md",
                 mime="text/markdown",
@@ -620,12 +799,22 @@ def _render_report(result: dict):
         with dl_col2:
             if pdf_bytes:
                 st.download_button(
-                    label=t("download_pdf"),
+                    label=f"📑 {t('download_pdf')}",
                     data=pdf_bytes,
                     file_name=f"token_lens_{token.get('symbol', 'report').lower()}.pdf",
                     mime="application/pdf",
                     use_container_width=True,
                 )
+            else:
+                st.download_button(
+                    label=f"📑 {t('download_pdf')}",
+                    data="",
+                    file_name="unavailable.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                    disabled=True,
+                )
+        st.markdown('</div>', unsafe_allow_html=True)
     
     # 数据完整性警告
     for w in _data_quality_warnings(token):
@@ -640,13 +829,13 @@ def _render_report(result: dict):
         # Token 信息头部
         col1, col2 = st.columns([1.2, 1])
         with col1:
-            # Token 名称和基本信息
-            st.markdown(f"""
-            <div style="margin-bottom:1rem;">
-                <span style="font-size:1.5rem;font-weight:700;color:#fafafa;">{token['name']}</span>
-                <span style="font-size:1.25rem;color:#71717a;margin-left:0.5rem;">{token['symbol']}</span>
+            # Token 名称和基本信息 - 美化样式
+            st.markdown(f'''
+            <div style="margin-bottom:1rem; border-bottom: 1px solid #27272a; padding-bottom: 0.75rem;">
+                <span style="font-size:1.8rem;font-weight:700;color:#fafafa;">{token['name']}</span>
+                <span style="background: rgba(99,102,241,0.15); padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 0.9rem; color:#a1a1aa; margin-left:0.5rem;">{token['symbol']}</span>
             </div>
-            """, unsafe_allow_html=True)
+            ''', unsafe_allow_html=True)
                 
             rank = token.get("market_cap_rank")
             price = token.get("price_usd")
@@ -699,16 +888,44 @@ def _render_report(result: dict):
             "technical":   t("score_technical"),
             "competitive": t("score_competitive"),
             "risk":        t("score_risk"),
+            "tokenomics":  t("dimension_tokenomics"),
+            "onchain":     t("dimension_onchain"),
         }
         for key, label in dim_labels.items():
-            s = scores[key]
-            pct = s["score"] / s["max"]
+            s = scores.get(key, {"score": 0, "max": 1})
+            pct = s["score"] / s["max"] if s["max"] > 0 else 0
             icon = _score_color(pct)
             col_icon, col_label, col_bar, col_score = st.columns([0.3, 2, 5, 1])
             col_icon.write(icon)
             col_label.write(f"**{label}**")
-            col_bar.progress(pct)
+            # 自定义 HTML 进度条，根据得分动态配色
+            bar_color = _score_bar_color(pct)
+            with col_bar:
+                bar_html = f'''
+                <div style="background:#27272a; border-radius:5px; height:10px; width:100%; overflow:hidden; margin-top:8px;">
+                    <div style="background:{bar_color}; width:{pct*100:.1f}%; height:100%; border-radius:5px; transition: width 0.5s ease;"></div>
+                </div>
+                '''
+                st.markdown(bar_html, unsafe_allow_html=True)
             col_score.write(f"**{s['score']}**/{s['max']}")
+            
+            # 为新维度显示数据可用性和扣分详情
+            if key == "tokenomics":
+                if not s.get('data_available', True):
+                    st.caption("⚠️ Tokenomics 数据暂不可用，使用默认满分")
+                elif s.get('deductions'):
+                    for d in s['deductions']:
+                        reason = d.get('reason', d) if isinstance(d, dict) else str(d)
+                        points = d.get('points', 0) if isinstance(d, dict) else 0
+                        st.caption(f"  ⚠️ {reason}：-{points} 分")
+            elif key == "onchain":
+                if not s.get('data_available', True):
+                    st.caption("⚠️ 链上数据暂不可用，使用默认满分")
+                elif s.get('deductions'):
+                    for d in s['deductions']:
+                        reason = d.get('reason', d) if isinstance(d, dict) else str(d)
+                        points = d.get('points', 0) if isinstance(d, dict) else 0
+                        st.caption(f"  ⚠️ {reason}：-{points} 分")
 
         st.divider()
         st.metric("综合总分", f"{total} / 100")
@@ -747,9 +964,23 @@ def _render_report(result: dict):
                 cols = st.columns(4)
                 for j, ex in enumerate(listed[i:i+4]):
                     if ex == "BYDFi":
-                        cols[j].success(f"✅ {ex}")
+                        # BYDFi 卡片 - 发光突出效果
+                        cols[j].markdown(f'''
+                        <div style="padding:0.75rem 1rem; border-radius:8px; text-align:center;
+                                    background:rgba(34,197,94,0.15); border:1px solid #22c55e;
+                                    box-shadow: 0 0 15px rgba(34,197,94,0.2);
+                                    color:#22c55e; font-weight:600;">
+                            ✅ {ex}
+                        </div>
+                        ''', unsafe_allow_html=True)
                     else:
-                        cols[j].info(f"📌 {ex}")
+                        cols[j].markdown(f'''
+                        <div style="padding:0.75rem 1rem; border-radius:8px; text-align:center;
+                                    background:rgba(99,102,241,0.08); border:1px solid #3f3f46;
+                                    color:#a1a1aa;">
+                            📌 {ex}
+                        </div>
+                        ''', unsafe_allow_html=True)
             if other_count:
                 st.caption(f"另有 {other_count} 家其他交易所")
         else:
@@ -764,11 +995,23 @@ def _render_report(result: dict):
         with col_a:
             st.markdown(t("ai_reasons"))
             for reason in ai.get("top_reasons", []):
-                st.markdown(f"> {reason}")
+                st.markdown(f'''
+                <div style="padding:0.6rem 1rem; margin-bottom:0.5rem; border-radius:8px; 
+                            background:rgba(34,197,94,0.08); border-left:3px solid #22c55e;
+                            color:#e4e4e7; font-size:0.9rem; line-height:1.6;">
+                    ✅ {reason}
+                </div>
+                ''', unsafe_allow_html=True)
         with col_b:
             st.markdown(t("ai_risks"))
             for risk in ai.get("top_risks", []):
-                st.markdown(f"> {risk}")
+                st.markdown(f'''
+                <div style="padding:0.6rem 1rem; margin-bottom:0.5rem; border-radius:8px; 
+                            background:rgba(234,179,8,0.08); border-left:3px solid #eab308;
+                            color:#e4e4e7; font-size:0.9rem; line-height:1.6;">
+                    ⚠️ {risk}
+                </div>
+                ''', unsafe_allow_html=True)
     
         st.divider()
         st.markdown(t("bydfi_suggestion"))
@@ -788,11 +1031,11 @@ def _render_report(result: dict):
 
 # ── 评估流程 ─────────────────────────────────────────────
 
-def _run_evaluation(coin: dict):
+def _run_evaluation(coin: dict, force_refresh: bool = False):
     coin_id = coin["id"]
     cache_key = f"result_{coin_id}"
 
-    if cache_key in st.session_state:
+    if not force_refresh and cache_key in st.session_state:
         _render_report(st.session_state[cache_key])
         return
 
@@ -812,53 +1055,111 @@ def _run_evaluation(coin: dict):
         st.button(t("refresh"), on_click=st.rerun)
         return
     
-    # 阶段1.5：DeFiLlama 数据丰富
+    # 阶1.5：DeFiLlama 数据丰富
     progress.progress(25, text=t("progress_defi"))
-    status.info("📊 DeFiLlama TVL...")
+    status.info(f"📊 {t('progress_defi')}")
     try:
         token_data = enrich_token_data(coin_id, token_data)
     except Exception:
         pass  # DeFiLlama 数据失败不影响主流程
-    progress.progress(35, text=t("progress_done"))
-
-    # 阶段2：规则评分
-    status.info("📊 Scoring...")
-    progress.progress(40, text=t("progress_scoring"))
-    rule_scores = compute_rule_scores(token_data)
+    progress.progress(30, text=t("progress_done"))
+    
+    # 阶2：Tokenomics 分析（新增）
+    progress.progress(35, text="Tokenomics 分析...")
+    status.info("📊 Tokenomics 分析...")
+    try:
+        tokenomics_data = analyze_tokenomics(token_data)
+        logger.info(f"Tokenomics 分析完成: data_available={tokenomics_data.get('data_available')}")
+    except Exception as e:
+        logger.warning(f"Tokenomics 分析失败: {e}")
+        tokenomics_data = None
+    
+    # 阶2.5：链上数据（新增）
+    progress.progress(40, text="链上数据分析...")
+    status.info("🔗 链上数据...")
+    try:
+        onchain_data = get_onchain_data(token_data)
+        logger.info(f"链上数据获取完成: data_available={onchain_data.get('data_available')}")
+    except Exception as e:
+        logger.warning(f"链上数据获取失败: {e}")
+        onchain_data = None
+    
+    # 阶2.8：基准对标（新增）
+    progress.progress(45, text="基准对标...")
+    status.info("📊 基准对标...")
+    benchmark_projects = []
+    try:
+        benchmark_projects, benchmark_text = find_benchmarks(token_data, limit=5)
+        # 将基准对标信息注入 token_data 供 Claude 使用
+        token_data["benchmark_info"] = benchmark_text
+        logger.info(f"基准对标完成: 找到 {len(benchmark_projects)} 个相似项目")
+    except Exception as e:
+        logger.warning(f"基准对标分析失败: {e}")
+        token_data["benchmark_info"] = ""
+    
+    # 阶3：规则评分（更新：传入新数据）
+    status.info(f"📊 {t('progress_scoring')}")
+    progress.progress(50, text=t("progress_scoring"))
+    rule_scores = compute_rule_scores(token_data, tokenomics_data=tokenomics_data, onchain_data=onchain_data)
     progress.progress(55, text=t("progress_done"))
 
-    # 阶段3：Claude 分析
-    status.info("🤖 Claude AI analysis (15-20s)...")
+    # 阶4：Claude 分析（增强：使用多轮反思）
+    status.info(f"🤖 {t('progress_ai')}")
     progress.progress(60, text=t("progress_ai"))
+        
+    # 将 tokenomics 和 onchain 数据也传入 token_data 供 Claude 使用
+    if tokenomics_data:
+        token_data["tokenomics_analysis"] = tokenomics_data
+    if onchain_data:
+        token_data["onchain_analysis"] = onchain_data
+        
     try:
-        ai_result = analyze(token_data, rule_scores)
-    except RuntimeError as e:
-        progress.empty()
-        status.empty()
-        st.error(f"AI 分析失败：{e}")
-        if "余额不足" in str(e):
-            st.info("💡 提示：可在 .env 中设置 `DEMO_MODE=true` 跳过 Claude API，用规则自动生成分析")
-        st.button("重试", on_click=st.rerun)
-        return
+        # 使用增强分析（非 Demo 模式下启用多轮反思）
+        ai_result = analyze_with_reflection(token_data, rule_scores)
+    except Exception as e:
+        logger.warning(f"多轮反思分析失败，降级到普通分析: {e}")
+        try:
+            ai_result = analyze(token_data, rule_scores)
+        except RuntimeError as e:
+            progress.empty()
+            status.empty()
+            st.error(f"AI 分析失败：{e}")
+            if "余额不足" in str(e):
+                st.info("💡 提示：可在 .env 中设置 `DEMO_MODE=true` 跳过 Claude API，用规则自动生成分析")
+            st.button("重试", on_click=st.rerun)
+            return
     progress.progress(90, text="✓ AI 分析完成")
-
+    
+    # 计算风险最终分（基于规则评分 + AI 补充扣分 + 反思调整）
+    reflection_adjustment = ai_result.get("reflection_adjustment", 0)
     risk_final_score = max(
         0,
-        rule_scores["risk_rules"]["score"] - ai_result.get("risk_extra_deduction", 0)
+        rule_scores["risk_rules"]["score"] - ai_result.get("risk_extra_deduction", 0) - reflection_adjustment
     )
-
+        
+    # 竞争位置评分（需缩放到新满分15，与旧保持一致）
+    competitive_score = ai_result.get("competitive_score", 8)
+    
     result = {
         "token_data": token_data,
         "rule_scores": rule_scores,
         "ai_result": ai_result,
         "elapsed_seconds": time.time() - start_time,
         "final_scores": {
-            "market":      {"score": rule_scores["market"]["score"],         "max": 30},
-            "community":   {"score": rule_scores["community"]["score"],      "max": 20},
-            "technical":   {"score": rule_scores["technical"]["score"],      "max": 20},
-            "competitive": {"score": ai_result.get("competitive_score", 8), "max": 15},
-            "risk":        {"score": risk_final_score,                       "max": 15},
+            "market":      {"score": rule_scores["market"]["score"],         "max": 25},
+            "community":   {"score": rule_scores["community"]["score"],      "max": 15},
+            "technical":   {"score": rule_scores["technical"]["score"],      "max": 15},
+            "competitive": {"score": competitive_score,                       "max": 15},
+            "risk":        {"score": risk_final_score,                        "max": 10},
+            "tokenomics":  rule_scores.get("tokenomics", {"score": 10, "max": 10}),
+            "onchain":     rule_scores.get("onchain", {"score": 10, "max": 10}),
         },
+        # 新增字段
+        "tokenomics_data": tokenomics_data,
+        "onchain_data": onchain_data,
+        "benchmark_projects": benchmark_projects,
+        "confidence_level": ai_result.get("confidence_level", 0.8),
+        "data_contradictions": ai_result.get("data_contradictions", []),
     }
     result["total_score"] = sum(v["score"] for v in result["final_scores"].values())
 
@@ -870,9 +1171,10 @@ def _run_evaluation(coin: dict):
     st.session_state[cache_key] = result
     
     # 保存到数据库
+    assessment_id = None
     try:
         verdict = "强烈推荐" if result["total_score"] >= 75 else ("建议观望" if result["total_score"] >= 55 else "不建议")
-        get_db().save_assessment(
+        assessment_id = get_db().save_assessment(
             coin_id=coin_id,
             coin_name=token_data["name"],
             coin_symbol=token_data["symbol"],
@@ -880,8 +1182,23 @@ def _run_evaluation(coin: dict):
             verdict=verdict,
             result=result,
         )
-    except Exception:
-        pass  # 数据库保存失败不影响主流程
+    except Exception as e:
+        logger.warning(f"数据库保存失败: {e}")
+    
+    # 保存预测记录（在 save_assessment 之后）
+    try:
+        if assessment_id:
+            db = get_db()
+            db.save_prediction(
+                assessment_id=assessment_id,
+                coin_id=coin_id,
+                coin_name=token_data.get("name", ""),
+                predicted_score=result["total_score"],
+                predicted_verdict=verdict
+            )
+            logger.info(f"预测记录已保存: assessment_id={assessment_id}")
+    except Exception as e:
+        logger.warning(f"保存预测记录失败: {e}")
     
     _render_report(result)
 
@@ -889,44 +1206,23 @@ def _run_evaluation(coin: dict):
 # ── 页面主体 ─────────────────────────────────────────────
 
 st.set_page_config(
-    page_title="Token Lens - Token Assessment System",
-    page_icon="🔍",
+    page_title="BYDFi - Token Assessment System",
+    page_icon="📊",
     layout="wide",
 )
 
 _inject_css()
 
-# 顶部导航栏 - 标题 + 语言切换
-st.markdown("""
-<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:0.25rem;">
-    <div>
-        <div style="display:flex;align-items:center;gap:0.75rem;">
-            <span style="font-size:1.75rem;">🔍</span>
-            <h1 style="margin:0;font-size:1.5rem;">Token Lens</h1>
-        </div>
-        <p style="color:#71717a;font-size:0.875rem;margin:0.25rem 0 0 0;">BYDFi Token Assessment System</p>
+# 顶部导航栏 - BYDFi Logo + 语言切换同行
+col_title, col_lang = st.columns([5, 1])
+with col_title:
+    st.markdown('''
+    <div style="padding-top:0.5rem; display:flex; align-items:center; gap:0.75rem;">
+        <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAMAAABEpIrGAAAAV1BMVEVHcEz4uzcSFiL6xTj4uzf4uzf4uzf4uzf6vjf5vDcICiASFiL4uzf7vTcRFSISFiIPEhwOEyESFiL4uzf4uzcIDSEOFCISFiL4uzcSFiL4uzcSFiL4uzcbZniUAAAAG3RSTlMAcewG9orQwRZCE9PpKIK7BjtlWdsmTKSrMppy/mljAAABCklEQVQ4jXWS27aDIBBDRxABFa+1tS3//52HI04sqHmaJVmbMJG+uxZKpXwUseE1JOemzA3fKTEUng2CDc0NYQKiI6t3VQUjWqobIGpTMfhh9lkRjUC8yLLBr3GuTLiuh2MhDYfb5vk/zxs5+8G1bNAyzDom7oB4Yj++nMNso2EAQpAEoiWp+NEHYjo25AuSbBiQUywSOVt37O15vYufzfZI+cEV9nf1o9j7QAe+SuvfcoqRVjzTpoZaxF0D8Ml+oK3Vmh4AmNwQWu1oRkKVn4ecTe0AqE6AoPdRRGzxJIdzfXl+1JA/kYUmLxKmiKuEEaH3nm9lTy3mWvMWT4gyb/GU8+6JLKNk+uEPSjAvNsI1XKcAAAAASUVORK5CYII=" alt="BYDFi" style="width:32px; height:32px;">
+        <span style="font-size:1.5rem; font-weight:800; background: linear-gradient(135deg, #fbbf24, #f59e0b); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">BYDFi</span>
     </div>
-</div>
-""", unsafe_allow_html=True)
-
-# 语言切换 - 右上角绝对定位
-st.markdown("""
-<style>
-.lang-selector {
-    position: absolute;
-    top: 0.75rem;
-    right: 1rem;
-    z-index: 999;
-}
-.lang-selector > div {
-    background: #141415 !important;
-    border: 1px solid #27272a !important;
-    border-radius: 6px !important;
-}
-</style>
-""", unsafe_allow_html=True)
-
-col_main, col_lang = st.columns([6, 1])
+    <div style="color:#71717a; font-size:0.75rem; margin-top:0.1rem;">Token Assessment System</div>
+    ''', unsafe_allow_html=True)
 with col_lang:
     current_lang = st.session_state.get("lang", "zh")
     lang_options = {"zh": "🇨🇳 中文", "en": "🇺🇸 EN"}
@@ -942,9 +1238,35 @@ with col_lang:
         st.session_state["lang"] = selected_lang
         st.rerun()
 
-# 搜索框
-st.markdown("<div style=\"height:0.25rem;\"></div>", unsafe_allow_html=True)
-col_search, col_btn = st.columns([4, 1])
+# 搜索框 - 注入CSS让搜索框和按钮紧贴
+st.markdown("""
+<style>
+    /* 搜索区域 - 消除列间距 */
+    div[data-testid="stColumns"]:has(div[data-testid="stTextInput"]) {
+        gap: 0 !important;
+    }
+    div[data-testid="stColumns"]:has(div[data-testid="stTextInput"]) > div {
+        padding-left: 0 !important;
+        padding-right: 0 !important;
+    }
+    /* 搜索按钮列只保留最小左内距 */
+    div[data-testid="stColumns"]:has(div[data-testid="stTextInput"]) > div:last-child {
+        padding-left: 0.25rem !important;
+    }
+    /* 重置/新搜索按钮样式 - 深色背景 */
+    div[data-testid="stButton"] > button[kind="secondary"] {
+        background-color: #27272a !important;
+        border: 1px solid #3f3f46 !important;
+        color: #a1a1aa !important;
+    }
+    div[data-testid="stButton"] > button[kind="secondary"]:hover {
+        background-color: #3f3f46 !important;
+        border-color: #52525b !important;
+        color: #e4e4e7 !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+col_search, col_btn, col_spacer = st.columns([3, 1, 4], gap="small")
 with col_search:
     query = st.text_input(
         "Token",
@@ -952,19 +1274,23 @@ with col_search:
         label_visibility="collapsed",
     )
 with col_btn:
-    search_clicked = st.button(t("search_button"), type="primary")
+    search_clicked = st.button(t("search_button"), type="primary", use_container_width=True)
+
+# 搜索提示文字 - 小字号置灰
+st.markdown(f'<div style="color:#71717a; font-size:0.75rem; margin-top:-0.5rem; margin-bottom:0.5rem;">{t("search_hint")}</div>', unsafe_allow_html=True)
 
 # ── 快速演示：直接触发评估，跳过搜索和选择 ──────────────
 auto_coin = st.session_state.pop("auto_coin", None)
 if auto_coin:
     cache_key = f"result_{auto_coin['id']}"
+    force_refresh = auto_coin.pop("force_refresh", False)
     st.markdown(f"**{auto_coin['name']} ({auto_coin['symbol']})**")
-    if cache_key in st.session_state:
+    if cache_key in st.session_state and not force_refresh:
         if st.button(t("refresh"), key="refresh_auto"):
             del st.session_state[cache_key]
             st.session_state["auto_coin"] = auto_coin
             st.rerun()
-    _run_evaluation(auto_coin)
+    _run_evaluation(auto_coin, force_refresh=force_refresh)
     st.stop()
 
 # ── 手动搜索流程 ──────────────────────────────────────────
@@ -1007,17 +1333,21 @@ if candidates and saved_query:
     coin = candidates[selected_idx]
 
     cache_key = f"result_{coin['id']}"
-    col_btn, col_refresh, col_empty = st.columns([1, 1, 2])
+    col_btn, col_refresh, col_spacer = st.columns([1, 1, 4])
     with col_btn:
         run = st.button(t("start_evaluation"), type="primary", use_container_width=True)
     with col_refresh:
-        if cache_key in st.session_state:
-            if st.button(t("refresh"), use_container_width=True):
-                del st.session_state[cache_key]
-                st.rerun()
+        # 重置按钮 - 使用 secondary 类型（深灰色背景）
+        if st.button(t("new_search"), type="secondary", use_container_width=True):
+            # 清除搜索状态
+            st.session_state.pop("search_candidates", None)
+            st.session_state.pop("search_query", None)
+            st.rerun()
 
     if run:
-        _run_evaluation(coin)
+        if cache_key in st.session_state:
+            del st.session_state[cache_key]
+        _run_evaluation(coin, force_refresh=True)
     elif cache_key in st.session_state:
         _render_report(st.session_state[cache_key])
 
@@ -1102,6 +1432,8 @@ if st.session_state.get("show_compare"):
             "technical": "技术实力",
             "competitive": "竞争位置",
             "risk": "风险信号",
+            "tokenomics": "Tokenomics",
+            "onchain": "链上健康度",
         }
         
         for key, label in dim_labels.items():
