@@ -2,7 +2,7 @@
 
 > BYDFi AI Reforge Hackathon 参赛项目 · 开放命题（方向5）
 
-**输入 Token 名称，3 分钟内输出结构化上币评估报告。**
+**输入 Token 名称或合约地址，3 分钟内输出结构化上币评估报告。**
 
 ---
 
@@ -13,7 +13,7 @@
 Token Lens 把这个流程压缩到 **3 分钟**：
 
 ```
-用户输入 Token 名称
+用户输入 Token 名称/符号/合约地址
   → 实时拉取 CoinGecko 数据（市场/社区/技术/交易所）
   → 规则引擎计算前3个维度评分
   → Claude claude-sonnet-4-6 分析竞争位置 + 识别语义风险
@@ -39,17 +39,27 @@ Token Lens 把这个流程压缩到 **3 分钟**：
 ### 3. 数据全部实时，无缓存
 每次评估现场调用 CoinGecko API，交易所上线情况实时获取。
 
+### 4. 多语言支持
+支持中英文切换，右上角一键切换语言。
+
+### 5. 智能搜索
+- 支持 Token 名称、符号、合约地址搜索
+- 支持 EVM 链（Ethereum/BSC/Polygon/Arbitrum 等）和 Solana 链
+- 自动检测钱包地址并给出提示
+
 ---
 
 ## 评分维度
 
 | 维度 | 权重 | 数据来源 | 评分方式 |
 |------|------|----------|----------|
-| 市场规模 | 30% | CoinGecko market_data | 规则 |
-| 社区活跃度 | 20% | CoinGecko watchlist_users | 规则 |
-| 技术实力 | 20% | CoinGecko developer_data | 规则 |
+| 市场规模 | 25% | CoinGecko market_data | 规则 |
+| 社区活跃度 | 15% | CoinGecko watchlist_users | 规则 |
+| 技术实力 | 15% | CoinGecko developer_data | 规则 |
 | 竞争位置 | 15% | Claude 分析（基于实时 tickers） | AI |
-| 风险信号 | 15% | 规则 + Claude 语义判断 | 规则+AI |
+| 风险信号 | 10% | 规则 + Claude 语义判断 | 规则+AI |
+| Tokenomics | 10% | 供应量/流通比例分析 | 规则 |
+| 链上数据 | 10% | 活跃地址/交易量等 | 规则 |
 
 **推荐阈值**：🟢 ≥75 强烈推荐 / 🟡 55-74 建议观望 / 🔴 <55 不建议
 
@@ -95,16 +105,24 @@ DEMO_MODE=true                    # 可选，跳过 Claude API（路演备用）
 
 ```
 app.py                          # Streamlit 主入口 + UI 渲染
+i18n.py                         # 多语言支持（中/英）
 collectors/
-  coingecko.py                  # CoinGecko 数据采集（唯一数据源）
+  coingecko.py                  # CoinGecko 数据采集（名称/符号/合约地址搜索）
+  defillama.py                  # DeFiLlama TVL 数据
+  tokenomics.py                 # Tokenomics 分析
+  onchain.py                    # 链上数据获取
 analyzer/
   scorer.py                     # 规则评分引擎（市场/社区/技术/风险）
   claude_analyzer.py            # Claude API 调用（竞争位置 + 语义风险）
+  benchmark.py                  # 基准对标分析
 report/
   chart.py                      # Plotly 雷达图生成
+  pdf_export.py                 # PDF 报告导出
+database/
+  database.py                   # SQLite 数据持久化
 ```
 
-**技术选型**：Python · Streamlit · Claude API · CoinGecko API · Plotly
+**技术选型**：Python · Streamlit · Claude API · CoinGecko API · DeFiLlama API · Plotly
 
 ---
 
