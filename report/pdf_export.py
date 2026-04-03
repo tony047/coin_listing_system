@@ -9,10 +9,49 @@ from reportlab.lib.units import cm
 from reportlab.lib.colors import HexColor, black, white
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from io import BytesIO
 from typing import Dict, Any, Optional
 import os
 from datetime import datetime
+
+# 注册中文字体
+def _register_chinese_font():
+    """注册中文字体"""
+    # 尝试多种常见中文字体路径
+    font_paths = [
+        # macOS (优先使用 Arial Unicode)
+        "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+        "/Library/Fonts/Arial Unicode.ttf",
+        "/System/Library/Fonts/Hiragino Sans GB.ttc",
+        # Linux
+        "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        # Windows
+        "C:/Windows/Fonts/msyh.ttc",
+        "C:/Windows/Fonts/simhei.ttf",
+        # 项目本地字体
+        os.path.join(os.path.dirname(__file__), "..", "assets", "NotoSansSC-Regular.ttf"),
+    ]
+    
+    for font_path in font_paths:
+        if os.path.exists(font_path):
+            try:
+                pdfmetrics.registerFont(TTFont('ChineseFont', font_path))
+                print(f"[PDF] 已加载中文字体: {font_path}")
+                return 'ChineseFont'
+            except Exception as e:
+                print(f"[PDF] 字体加载失败 {font_path}: {e}")
+                continue
+    
+    # 如果没有找到中文字体，使用 Helvetica
+    print("[PDF] 警告: 未找到中文字体，中文可能无法正常显示")
+    return 'Helvetica'
+
+# 初始化字体
+CHINESE_FONT = _register_chinese_font()
 
 
 class PDFExporter:
@@ -39,6 +78,7 @@ class PDFExporter:
         self.styles.add(ParagraphStyle(
             name='CustomTitle',
             parent=self.styles['Heading1'],
+            fontName=CHINESE_FONT,
             fontSize=24,
             textColor=self.COLORS['primary'],
             spaceAfter=30,
@@ -49,6 +89,7 @@ class PDFExporter:
         self.styles.add(ParagraphStyle(
             name='CustomSubtitle',
             parent=self.styles['Normal'],
+            fontName=CHINESE_FONT,
             fontSize=12,
             textColor=self.COLORS['gray'],
             spaceAfter=20,
@@ -59,6 +100,7 @@ class PDFExporter:
         self.styles.add(ParagraphStyle(
             name='SectionTitle',
             parent=self.styles['Heading2'],
+            fontName=CHINESE_FONT,
             fontSize=14,
             textColor=black,
             spaceBefore=20,
@@ -69,6 +111,7 @@ class PDFExporter:
         self.styles.add(ParagraphStyle(
             name='CustomBody',
             parent=self.styles['Normal'],
+            fontName=CHINESE_FONT,
             fontSize=10,
             leading=14,
             spaceAfter=8,
@@ -78,6 +121,7 @@ class PDFExporter:
         self.styles.add(ParagraphStyle(
             name='Verdict',
             parent=self.styles['Normal'],
+            fontName=CHINESE_FONT,
             fontSize=14,
             alignment=TA_CENTER,
             spaceBefore=10,
@@ -106,6 +150,7 @@ class PDFExporter:
         return ParagraphStyle(
             name='DynamicVerdict',
             parent=self.styles['Verdict'],
+            fontName=CHINESE_FONT,
             textColor=color,
             fontSize=16,
         )
@@ -184,7 +229,8 @@ class PDFExporter:
             ('BACKGROUND', (0, 0), (-1, 0), self.COLORS['primary']),
             ('TEXTCOLOR', (0, 0), (-1, 0), white),
             ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTNAME', (0, 0), (-1, 0), CHINESE_FONT),
+            ('FONTNAME', (0, 1), (-1, -1), CHINESE_FONT),
             ('FONTSIZE', (0, 0), (-1, -1), 9),
             ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
             ('TOPPADDING', (0, 0), (-1, 0), 10),
@@ -220,8 +266,8 @@ class PDFExporter:
             ('BACKGROUND', (0, 0), (-1, 0), self.COLORS['primary']),
             ('TEXTCOLOR', (0, 0), (-1, 0), white),
             ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+            ('FONTNAME', (0, 0), (-1, 0), CHINESE_FONT),
+            ('FONTNAME', (0, 1), (-1, -1), CHINESE_FONT),
             ('FONTSIZE', (0, 0), (-1, -1), 9),
             ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
             ('TOPPADDING', (0, 0), (-1, 0), 10),
