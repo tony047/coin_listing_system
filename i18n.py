@@ -12,12 +12,13 @@ LANGUAGES = {
         "sidebar_subtitle": "BYDFi 上币评估系统",
         
         # 搜索
-        "search_placeholder": "输入 Token 名称，如 ETH、HYPE、SUI...",
+        "search_placeholder": "输入 Token 名称或合约地址...",
         "search_button": "🔍 搜索",
-        "search_hint": "输入任意 Token 名称，3 分钟内输出结构化上币评估报告。",
+        "search_hint": "输入 Token 名称、符号或合约地址，3 分钟内输出结构化上币评估报告。",
         "search_results": "找到 {count} 个结果",
-        "search_not_found": "未找到「{query}」，请检查拼写或尝试英文名称",
+        "search_not_found": "未搜索到代币信息「{query}」，请检查名称或合约地址是否正确",
         "search_failed": "搜索失败：{error}",
+        "wallet_address_hint": "⚠️ 检测到可能是钱包地址，请使用代币合约地址进行搜索",
         
         # 按钮
         "start_evaluation": "🚀 开始评估",
@@ -165,12 +166,13 @@ LANGUAGES = {
         "sidebar_subtitle": "BYDFi Token Assessment System",
         
         # Search
-        "search_placeholder": "Enter token name, e.g. ETH, HYPE, SUI...",
+        "search_placeholder": "Enter token name or contract address...",
         "search_button": "🔍 Search",
-        "search_hint": "Enter any token name to get a structured assessment report in 3 minutes.",
+        "search_hint": "Enter token name, symbol, or contract address to get a structured assessment report in 3 minutes.",
         "search_results": "Found {count} results",
-        "search_not_found": "Token「{query}」not found, please check spelling",
+        "search_not_found": "Token not found: {query}. Please check the name or contract address.",
         "search_failed": "Search failed: {error}",
+        "wallet_address_hint": "⚠️ Detected as possible wallet address. Please use a token contract address instead.",
         
         # Buttons
         "start_evaluation": "🚀 Start Assessment",

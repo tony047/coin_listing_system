@@ -983,7 +983,7 @@ def _render_report(result: dict):
                         </div>
                         ''', unsafe_allow_html=True)
             if other_count:
-                st.caption(f"另有 {other_count} 家其他交易所")
+                st.markdown(f'''<span style="color:#60a5fa; font-size:0.85rem;">📊 另有 {other_count} 家其他交易所</span>''', unsafe_allow_html=True)
         else:
             st.warning("未获取到交易所上线信息")
 
@@ -1315,22 +1315,26 @@ if search_clicked and query:
 candidates = st.session_state.get("search_candidates", [])
 saved_query = st.session_state.get("search_query", "")
 
+# 检查是否是钱包地址提示
+if candidates and len(candidates) == 1 and candidates[0].get("_is_wallet_address"):
+    st.warning(t("wallet_address_hint"))
+    st.session_state.pop("search_candidates", None)
+    _render_homepage()
+    st.stop()
+
+# 如果搜索过但没有结果，显示提示
+if saved_query and not candidates:
+    st.warning(t("search_not_found", query=saved_query))
+    _render_homepage()
+    st.stop()
+
 # 如果没有搜索词或搜索结果，显示首页
 if not query and not candidates:
     _render_homepage()
     st.stop()
 
-if not candidates:
-    _render_homepage()
-    st.stop()
-
 if candidates and saved_query:
     # 显示搜索结果
-    if not candidates:
-        st.warning(t("search_not_found", query=saved_query))
-        st.stop()
-
-    # 选择 Token - 紧凑布局
     st.markdown(f"**{t('search_results', count=len(candidates))}**")
     options = [f"{c['name']} ({c['symbol']})" for c in candidates]
     selected_idx = st.selectbox("Token", range(len(options)), 

@@ -4,6 +4,7 @@ CoinGecko 数据采集模块
 """
 
 import os
+import re
 import requests
 import time
 from typing import Optional
@@ -25,6 +26,18 @@ MAJOR_EXCHANGES = {
 BASE_URL = "https://api.coingecko.com/api/v3"
 
 
+def _is_contract_address(query: str) -> bool:
+    """检测是否为合约地址"""
+    query = query.strip().lower()
+    # 以太坊/BSC/Polygon 等 EVM 链地址：0x 开头，42位
+    if re.match(r'^0x[a-f0-9]{40}$', query):
+        return True
+    # Solana 地址：32-44位 base58 字符
+    if re.match(r'^[1-9A-HJ-NP-Za-km-z]{32,44}$', query):
+        return True
+    return False
+
+
 def _get_headers() -> dict:
     """构造请求头，有真实 API Key 时带上（排除占位符）"""
     api_key = os.getenv("COINGECKO_API_KEY", "").strip()
@@ -37,8 +50,16 @@ def _get_headers() -> dict:
 def search_token(query: str) -> list[dict]:
     """
     搜索 Token，返回候选列表
+    支持：名称、符号、合约地址（EVM/Solana）
     返回格式：[{"id": "sui", "name": "Sui", "symbol": "SUI"}, ...]
     """
+    query = query.strip()
+    
+    # 如果是合约地址，使用合约地址搜索
+    if _is_contract_address(query):
+        return _search_by_contract_address(query)
+    
+    # 否则使用普通名称/符号搜索
     start_time = time.time()
     endpoint = f"{BASE_URL}/search"
     params = {"query": query}
@@ -91,6 +112,69 @@ def search_token(query: str) -> list[dict]:
         error_msg = f"搜索过程中发生未知错误：{e}"
         logger.api_error("CoinGecko.search_token", RuntimeError(error_msg), duration)
         raise RuntimeError(error_msg)
+
+
+def _search_by_contract_address(address: str) -> list[dict]:
+    """
+    通过合约地址搜索 Token
+    自动检测链类型并尝试匹配
+    """
+    start_time = time.time()
+    address = address.strip().lower()
+    
+    # 确定要尝试的平台列表
+    platforms_to_try = []
+    
+    if address.startswith("0x"):
+        # EVM 链地址，按优先级尝试
+        platforms_to_try = [
+            "ethereum",
+            "binance-smart-chain",
+            "polygon-pos",
+            "arbitrum-one",
+            "avalanche",
+            "base",
+            "optimistic-ethereum",
+        ]
+    else:
+        # Solana 地址
+        platforms_to_try = ["solana"]
+    
+    for platform in platforms_to_try:
+        try:
+            endpoint = f"{BASE_URL}/coins/{platform}/contract/{address}"
+            logger.api_call("CoinGecko", endpoint, {})
+            
+            resp = requests.get(
+                endpoint,
+                headers=_get_headers(),
+                timeout=10,
+            )
+            
+            if resp.status_code == 200:
+                data = resp.json()
+                result = [{
+                    "id": data.get("id"),
+                    "name": data.get("name"),
+                    "symbol": data.get("symbol", "").upper(),
+                    "platform": platform,
+                    "contract_address": address,
+                }]
+                duration = time.time() - start_time
+                logger.api_success("CoinGecko.contract_search", duration)
+                logger.info(f"Found token by contract: {data.get('name')} ({data.get('symbol')}) on {platform}")
+                return result
+        except requests.exceptions.HTTPError:
+            continue
+        except Exception as e:
+            logger.info(f"Contract not found on {platform}: {e}")
+            continue
+    
+    # 所有平台都没找到
+    duration = time.time() - start_time
+    logger.info(f"Contract address not found on any platform: {address}")
+    # 返回特殊标识，表示可能是钱包地址
+    return [{"_is_wallet_address": True, "query": address}]
 
 
 def extract_listed_exchanges(tickers: list) -> tuple[list[str], int]:
