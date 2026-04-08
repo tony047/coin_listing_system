@@ -19,6 +19,7 @@ except ImportError:
 logger = get_logger()
 
 MODEL = "claude-sonnet-4-6"
+FALLBACK_MODEL = "claude-haiku-4-5-20251001"  # sonnet 持续过载时的降级模型
 
 # 头部交易所分级（用于竞争位置评分参考）
 TIER1_EXCHANGES = {"Binance", "Coinbase Exchange", "OKX", "Bybit", "Kraken"}
@@ -248,8 +249,11 @@ def _parse_response(text: str) -> dict:
         return _fallback_result()
 
 
-def _fallback_result() -> dict:
-    """Claude 解析失败时的降级返回"""
+def _fallback_result(reason: str = "parse") -> dict:
+    """
+    Claude 解析失败时的降级返回
+    reason: 'overloaded' = 上游 529 过载；'parse' = 响应解析失败；其他 = 通用异常
+    """
     return {
         "competitive_score": 8,
         "competitive_reason": "AI 分析异常，以规则评分为准",
@@ -261,6 +265,7 @@ def _fallback_result() -> dict:
         "bydfi_urgency_reason": "AI 分析异常，建议人工核查",
         "summary": "AI 分析模块异常，请参考规则评分结果。",
         "parse_error": True,
+        "fallback_reason": reason,
         "confidence_level": 0.8,
         "data_contradictions": [],
     }
@@ -390,19 +395,89 @@ def analyze(token_data: dict, rule_scores: dict) -> dict:
         logger.api_call("Claude", f"analyze({token_name})", {"model": MODEL})
         logger.info(f"Starting Claude analysis for {token_name}")
 
-        message = client.messages.create(
-            model=MODEL,
-            max_tokens=1024,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        response_text = message.content[0].text
+        # 第一次：常规上限；若被 max_tokens 截断或解析失败，自动放大上限重试一次
+        attempts = [2048, 4096]
+        parsed = None
+        response_text = ""
+        stop_reason = None
+        used_model = MODEL  # 实际使用的模型，用于在 UI 提示降级
+        for idx, max_tokens in enumerate(attempts):
+            # 服务端过载（529）时：先重试主模型 → 仍失败则降级到 haiku → 仍失败走 fallback
+            message = None
+            model_chain = [
+                (MODEL, [0, 2, 5]),                    # 主模型：立即 + 2s + 5s
+                (FALLBACK_MODEL, [0, 3]),              # 降级模型：立即 + 3s
+            ]
+            exhausted = False
+            for model_name, backoffs in model_chain:
+                for retry_idx, wait_s in enumerate(backoffs):
+                    if wait_s:
+                        logger.warning(
+                            f"Claude 529 Overloaded [{token_name}] model={model_name}，{wait_s}s 后重试"
+                        )
+                        time.sleep(wait_s)
+                    try:
+                        message = client.messages.create(
+                            model=model_name,
+                            max_tokens=max_tokens,
+                            system=SYSTEM_PROMPT,
+                            messages=[{"role": "user", "content": prompt}],
+                        )
+                        used_model = model_name
+                        if model_name != MODEL:
+                            logger.warning(f"已降级到 {model_name} 完成分析 [{token_name}]")
+                        break
+                    except (anthropic.InternalServerError, anthropic.APIStatusError) as e:
+                        status = getattr(e, "status_code", None)
+                        # 非 5xx/529 → 抛给外层 except 走原有错误处理
+                        if status not in (529, 500, 502, 503, 504):
+                            raise
+                        if retry_idx == len(backoffs) - 1:
+                            logger.warning(
+                                f"模型 {model_name} 持续 {status} [{token_name}]，"
+                                f"{'尝试降级模型' if model_name == MODEL else '已无可用模型'}"
+                            )
+                if message is not None:
+                    break
+            else:
+                exhausted = True
+            if exhausted or message is None:
+                logger.error(f"所有模型均过载 [{token_name}]，使用 fallback")
+                return _fallback_result(reason="overloaded")
+            response_text = message.content[0].text
+            stop_reason = getattr(message, "stop_reason", None)
+            logger.info(
+                f"Claude attempt {idx + 1}/{len(attempts)} for {token_name} "
+                f"max_tokens={max_tokens} stop_reason={stop_reason}"
+            )
+
+            parsed = _parse_response(response_text)
+            truncated = stop_reason == "max_tokens"
+            if not parsed.get("parse_error") and not truncated:
+                break
+            # 截断或解析失败 → 用更大的 max_tokens 再来一次
+            if idx < len(attempts) - 1:
+                logger.warning(
+                    f"Claude 输出异常 [{token_name}] stop_reason={stop_reason} "
+                    f"parse_error={parsed.get('parse_error')}，将用 max_tokens={attempts[idx + 1]} 重试"
+                )
 
         duration = time.time() - start_time
         logger.api_success("Claude.analyze", duration)
-        logger.info(f"Claude analysis completed for {token_name} in {duration:.2f}s")
+        logger.info(f"Claude analysis completed for {token_name} in {duration:.2f}s (stop_reason={stop_reason})")
 
-        return _parse_response(response_text)
+        if parsed.get("parse_error"):
+            # 重试后仍失败：记录原始响应便于定位
+            logger.error(
+                f"Claude 响应解析失败 [{token_name}] stop_reason={stop_reason} "
+                f"raw_response={response_text[:1500]}"
+            )
+            parsed["fallback_reason"] = "parse"
+        # 标记实际使用的模型（用于 UI 显示降级提示）
+        parsed["used_model"] = used_model
+        if used_model != MODEL:
+            parsed["model_degraded"] = True
+        return parsed
 
     except anthropic.APITimeoutError as e:
         duration = time.time() - start_time
