@@ -40,6 +40,11 @@ def _register_chinese_font():
         if os.path.exists(font_path):
             try:
                 pdfmetrics.registerFont(TTFont('ChineseFont', font_path))
+                # 同时注册 Bold 变体(指向同一字体),避免 <b> 标签触发 Helvetica-Bold 回退导致中文方块
+                pdfmetrics.registerFont(TTFont('ChineseFont-Bold', font_path))
+                from reportlab.pdfbase.pdfmetrics import registerFontFamily
+                registerFontFamily('ChineseFont', normal='ChineseFont', bold='ChineseFont-Bold',
+                                   italic='ChineseFont', boldItalic='ChineseFont-Bold')
                 print(f"[PDF] 已加载中文字体: {font_path}")
                 return 'ChineseFont'
             except Exception as e:
