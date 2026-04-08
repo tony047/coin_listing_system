@@ -5,3 +5,7 @@ __pycache__/
 .DS_Store
 screenshot_*.png
 .streamlit/secrets.toml
+.idea/
+logs/
+# 自动下载的中文字体(运行时缓存)
+assets/NotoSansSC-Regular.ttf*

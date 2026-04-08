@@ -16,6 +16,42 @@ from typing import Dict, Any, Optional
 import os
 from datetime import datetime
 
+# 字体下载源 (按优先级尝试)
+_FONT_DOWNLOAD_URLS = [
+    "https://github.com/notofonts/noto-cjk/raw/main/Sans/Variable/TTF/Subset/NotoSansSC-VF.ttf",
+    "https://cdn.jsdelivr.net/gh/notofonts/noto-cjk@main/Sans/Variable/TTF/Subset/NotoSansSC-VF.ttf",
+]
+
+def _ensure_local_font():
+    """确保本地有可用的中文字体,缺失则尝试下载到 assets/"""
+    local_path = os.path.join(os.path.dirname(__file__), "..", "assets", "NotoSansSC-Regular.ttf")
+    if os.path.exists(local_path) and os.path.getsize(local_path) > 100 * 1024:
+        return local_path
+    try:
+        import urllib.request
+        os.makedirs(os.path.dirname(local_path), exist_ok=True)
+        for url in _FONT_DOWNLOAD_URLS:
+            try:
+                print(f"[PDF] 正在下载中文字体: {url}")
+                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    data = resp.read()
+                if len(data) < 100 * 1024:
+                    raise RuntimeError(f"字体文件过小: {len(data)} bytes")
+                tmp_path = local_path + ".tmp"
+                with open(tmp_path, "wb") as f:
+                    f.write(data)
+                os.replace(tmp_path, local_path)
+                print(f"[PDF] 字体下载成功: {local_path} ({len(data)//1024} KB)")
+                return local_path
+            except Exception as e:
+                print(f"[PDF] 字体下载失败 {url}: {e}")
+                continue
+    except Exception as e:
+        print(f"[PDF] 字体下载流程异常: {e}")
+    return None
+
+
 # 注册中文字体
 def _register_chinese_font():
     """注册中文字体"""
@@ -32,26 +68,33 @@ def _register_chinese_font():
         # Windows
         "C:/Windows/Fonts/msyh.ttc",
         "C:/Windows/Fonts/simhei.ttf",
-        # 项目本地字体
-        os.path.join(os.path.dirname(__file__), "..", "assets", "NotoSansSC-Regular.ttf"),
     ]
-    
+
+    def _try_register(path: str) -> bool:
+        try:
+            pdfmetrics.registerFont(TTFont('ChineseFont', path))
+            # 同时注册 Bold 变体(指向同一字体),避免 <b> 标签触发 Helvetica-Bold 回退导致中文方块
+            pdfmetrics.registerFont(TTFont('ChineseFont-Bold', path))
+            from reportlab.pdfbase.pdfmetrics import registerFontFamily
+            registerFontFamily('ChineseFont', normal='ChineseFont', bold='ChineseFont-Bold',
+                               italic='ChineseFont', boldItalic='ChineseFont-Bold')
+            print(f"[PDF] 已加载中文字体: {path}")
+            return True
+        except Exception as e:
+            print(f"[PDF] 字体加载失败 {path}: {e}")
+            return False
+
+    # 1) 优先使用系统字体
     for font_path in font_paths:
-        if os.path.exists(font_path):
-            try:
-                pdfmetrics.registerFont(TTFont('ChineseFont', font_path))
-                # 同时注册 Bold 变体(指向同一字体),避免 <b> 标签触发 Helvetica-Bold 回退导致中文方块
-                pdfmetrics.registerFont(TTFont('ChineseFont-Bold', font_path))
-                from reportlab.pdfbase.pdfmetrics import registerFontFamily
-                registerFontFamily('ChineseFont', normal='ChineseFont', bold='ChineseFont-Bold',
-                                   italic='ChineseFont', boldItalic='ChineseFont-Bold')
-                print(f"[PDF] 已加载中文字体: {font_path}")
-                return 'ChineseFont'
-            except Exception as e:
-                print(f"[PDF] 字体加载失败 {font_path}: {e}")
-                continue
-    
-    # 如果没有找到中文字体，使用 Helvetica
+        if os.path.exists(font_path) and _try_register(font_path):
+            return 'ChineseFont'
+
+    # 2) 系统字体全部不可用,自动下载到本地 assets/
+    downloaded = _ensure_local_font()
+    if downloaded and _try_register(downloaded):
+        return 'ChineseFont'
+
+    # 3) 如果还是没有中文字体，使用 Helvetica
     print("[PDF] 警告: 未找到中文字体，中文可能无法正常显示")
     return 'Helvetica'
 
