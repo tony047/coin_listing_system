@@ -686,14 +686,15 @@ def _render_homepage():
             if coin_id not in seen_ids:
                 cached = st.session_state.get(f"result_{coin_id}", {})
                 name = cached.get("token_data", {}).get("name", coin_id)
+                symbol = cached.get("token_data", {}).get("symbol", coin_id)
                 score = cached.get("total_score", "?")
-                display_records.append({"id": coin_id, "name": name, "score": score, "source": "session", "data": cached})
+                display_records.append({"id": coin_id, "name": name, "symbol": symbol, "score": score, "source": "session", "data": cached})
                 seen_ids.add(coin_id)
-        
-        
+
+
         for record in db_history:
             if record["coin_id"] not in seen_ids:
-                display_records.append({"id": record["coin_id"], "name": record["coin_name"], "score": record["total_score"], "source": "database", "record_id": record["id"], "data": record})
+                display_records.append({"id": record["coin_id"], "name": record["coin_name"], "symbol": record.get("coin_symbol", record["coin_id"]), "score": record["total_score"], "source": "database", "record_id": record["id"], "data": record})
                 seen_ids.add(record["coin_id"])
         
         
@@ -703,7 +704,8 @@ def _render_homepage():
             with hist_cols[i]:
                 score = record["score"]
                 icon = "🟢" if score != "?" and score >= 75 else ("🟡" if score != "?" and score >= 55 else "🔴")
-                if st.button(f"{icon} {record['name'][:10]}", key=f"hist_{record['source']}_{record['id']}", use_container_width=True):
+                symbol_label = (record.get("symbol") or record["name"]).upper()[:10]
+                if st.button(f"{icon} {symbol_label}", key=f"hist_{record['source']}_{record['id']}", use_container_width=True):
                     if record["source"] == "session":
                         cached = record["data"]
                         st.session_state["auto_coin"] = {"id": record["id"], "name": record["name"], "symbol": cached.get("token_data", {}).get("symbol", "")}
